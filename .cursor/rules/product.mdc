@@ -1,0 +1,223 @@
+---
+description: Contexto de producto y PRD de HomeAI Assistant
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# HomeAI Assistant - Product Context
+
+## Visión del Producto
+
+**HomeAI Assistant** es un asistente virtual para gestión del hogar que opera via WhatsApp, permitiendo a familias organizar sus finanzas, agenda, recordatorios y compras de forma conversacional.
+
+### Propuesta de Valor
+- **Para familias ocupadas** que necesitan organizar su hogar
+- **Via WhatsApp** (canal que ya usan diariamente)
+- **Conversacional e inteligente** (no menús ni comandos rígidos)
+- **Multi-tenant SaaS** (un número de WhatsApp sirve múltiples hogares)
+
+## Usuarios Objetivo
+
+### Usuario Primario: "El Organizador del Hogar"
+- Adulto (25-55 años) responsable de la gestión doméstica
+- Usa WhatsApp diariamente
+- Quiere reducir carga mental de recordar todo
+- Valora simplicidad sobre features complejos
+
+### Usuario Secundario: "Miembros del Hogar"
+- Familia/convivientes del organizador
+- Acceso limitado (agregar gastos, ver listas)
+- No necesitan instalar nada nuevo
+
+## Funcionalidades MVP
+
+### 1. Gestión de Presupuesto y Gastos
+**Problema:** "No sé en qué se me va la plata"
+
+**Funcionalidades:**
+- Definir presupuesto mensual por categorías (supermercado, servicios, transporte, etc.)
+- Registrar gastos via chat: "Gasté $5000 en super"
+- Reportes: total del mes, por categoría, comparativa con presupuesto
+- Alertas cuando una categoría supera el 80% del límite
+
+**Flujo típico:**
+```
+Usuario: "Gasté 3500 en el super"
+Bot: "✓ Registrado: $3,500 en Supermercado. 
+      Llevas $12,500/$20,000 este mes (62%)"
+```
+
+### 2. Agenda de Eventos
+**Problema:** "Se me olvidan las citas y eventos"
+
+**Funcionalidades:**
+- Crear eventos: "Tengo turno con el dentista el martes a las 10"
+- Ver agenda: "Qué tengo esta semana?"
+- Editar/cancelar eventos existentes
+- Detección de conflictos y duplicados
+
+**Flujo típico:**
+```
+Usuario: "Agendame reunión de padres el viernes 15 a las 18"
+Bot: "✓ Creado: Reunión de padres
+      📅 Viernes 15/3 a las 18:00
+      ¿Quieres que te recuerde antes?"
+```
+
+### 3. Recordatorios
+**Problema:** "Siempre me olvido de hacer X"
+
+**Funcionalidades:**
+- Recordatorios únicos: "Recordame mañana llamar al banco"
+- Recordatorios recurrentes: "Recordame todos los lunes sacar la basura"
+- Snooze: posponer recordatorios
+- Canales: WhatsApp (MVP), email (futuro)
+
+**Flujo típico:**
+```
+Usuario: "Recordame el 5 de cada mes pagar el alquiler"
+Bot: "✓ Recordatorio creado: Pagar alquiler
+      🔁 Cada día 5 del mes
+      Te aviso por WhatsApp"
+```
+
+### 4. Listas de Compras
+**Problema:** "Siempre me olvido algo en el super"
+
+**Funcionalidades:**
+- Múltiples listas (supermercado, farmacia, ferretería)
+- Agregar items: "Agregá leche y pan a la lista del super"
+- Ver lista actual
+- Marcar como comprado
+- Cantidades y notas opcionales
+
+**Flujo típico:**
+```
+Usuario: "Qué tengo en la lista del super?"
+Bot: "🛒 Lista Supermercado (5 items):
+      ☐ Leche (2 litros)
+      ☐ Pan
+      ☐ Huevos
+      ☐ Queso
+      ☐ Manzanas"
+```
+
+## Web de Configuración
+
+### Propósito
+Interfaz web para configuración que NO se puede hacer via chat:
+- Onboarding inicial (crear cuenta, vincular WhatsApp)
+- Configuración de categorías de presupuesto
+- Gestión de miembros del hogar
+- Ver historial y logs de conversaciones
+- Configuración de integraciones
+
+### Pantallas Principales
+1. **Login** - Google OAuth
+2. **Dashboard** - Resumen del mes (gastos, eventos, recordatorios pendientes)
+3. **Presupuesto** - Configurar categorías y límites
+4. **Miembros** - Invitar/gestionar usuarios del tenant
+5. **Logs** - Ver conversaciones y decisiones del bot (debugging)
+6. **Configuración** - Timezone, moneda, preferencias
+
+## Principios de Diseño Conversacional
+
+### DO's ✓
+- **Mínimas preguntas**: Inferir lo que se pueda del contexto
+- **Confirmación solo para acciones riesgosas**: Borrar, cancelar, montos altos
+- **Respuestas concisas**: Máximo 3-4 líneas
+- **Emojis moderados**: Ayudan a escanear, no abusar
+- **Contexto temporal**: "Mañana", "el martes" → resolver a fecha real
+
+### DON'Ts ✗
+- No pedir datos que ya tenemos
+- No menús numerados (1. Para X, 2. Para Y)
+- No respuestas largas tipo "Claro! Estaré encantado de ayudarte con..."
+- No jerga técnica en respuestas al usuario
+- No asumir sin confirmar en operaciones destructivas
+
+### Ejemplos de Tono
+```
+❌ Malo: "¡Hola! ¿En qué puedo ayudarte hoy? Puedo asistirte con..."
+✓ Bueno: "Hola Pablo 👋"
+
+❌ Malo: "He registrado exitosamente tu gasto en la categoría..."
+✓ Bueno: "✓ Registrado: $5,000 en Super (llevas $15k este mes)"
+
+❌ Malo: "¿Estás seguro de que deseas eliminar este registro?"
+✓ Bueno: "¿Borro el gasto de $5,000 del super?" (solo si es destructivo)
+```
+
+## Modelo de Negocio
+
+### Multi-tenancy
+- **Un número de WhatsApp** sirve a múltiples tenants (hogares)
+- Cada tenant tiene su data completamente aislada
+- Identificación por número de teléfono del usuario
+
+### Pricing (futuro)
+- **Free tier**: 1 usuario, funciones básicas
+- **Premium**: Múltiples usuarios, reportes avanzados, integraciones
+
+## Restricciones Técnicas de Producto
+
+### WhatsApp Business API
+- Mensajes tienen límite de caracteres (~4096)
+- No se puede iniciar conversación (usuario debe escribir primero dentro de 24h)
+- Templates para mensajes proactivos (recordatorios) requieren aprobación
+
+### Inteligencia Artificial
+- El bot puede equivocarse → siempre permitir corregir
+- Latencia de LLM → respuestas en <3 segundos idealmente
+- Costo por mensaje → optimizar tokens
+
+## Fases del Producto
+
+### Fase 1: POC (Actual)
+- Orquestación en n8n (sin código propio)
+- 4 funcionalidades core via WhatsApp
+- Web básica de configuración
+- Single-tenant para validar
+
+### Fase 2: MVP
+- Migración a Python (código propio)
+- Multi-tenant completo
+- Onboarding self-service
+- Métricas y analytics básicos
+
+### Fase 3: Growth
+- Integraciones (Google Calendar, bancos)
+- Funcionalidades premium
+- Mobile app companion
+
+## Métricas de Éxito
+
+### Engagement
+- Mensajes por usuario por semana
+- Retención a 7/30 días
+- Funcionalidades más usadas
+
+### Calidad
+- % de intenciones correctamente detectadas
+- Tiempo de respuesta del bot
+- Errores/reintentos por conversación
+
+### Negocio
+- Tenants activos
+- Conversión free → premium
+- Churn rate
+
+## Glosario de Dominio
+
+| Término | Definición |
+|---------|------------|
+| **Tenant** | Un hogar/cuenta. Agrupa usuarios y toda su data |
+| **Owner** | Usuario que creó el tenant. Permisos totales |
+| **Member** | Usuario invitado al tenant. Permisos limitados |
+| **Expense** | Gasto registrado con monto, categoría y fecha |
+| **Budget** | Presupuesto mensual definido por categoría |
+| **Event** | Entrada de calendario con fecha/hora |
+| **Reminder** | Alerta programada (única o recurrente) |
+| **Shopping List** | Lista de compras con items |
+| **Conversation** | Sesión de chat con el bot |
