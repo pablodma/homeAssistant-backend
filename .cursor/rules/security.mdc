@@ -1,0 +1,31 @@
+---
+description: Reglas de seguridad obligatorias
+globs:
+  - "**/*"
+---
+
+# Seguridad (OBLIGATORIO)
+
+## Credenciales
+- NUNCA hardcodear credenciales en código
+- Usar variables de entorno para secrets
+- NUNCA commitear archivos .env con valores reales
+- Usar `.env.example` para documentar variables requeridas
+
+## Multi-tenant Isolation
+- TODA query incluye `WHERE tenant_id = $tenant_id`
+- Row Level Security como segunda capa de defensa
+- Tests automatizados de aislamiento
+- Audit log de todo acceso a datos
+
+## Autenticación
+- JWT tokens firmados con secret rotable
+- Validar tenant_id del token contra recurso solicitado
+- Expiración de tokens configurable
+- Google OAuth para login web
+
+## Base de Datos
+- Queries parametrizadas (NUNCA string concatenation)
+- Connection pooling con límites
+- Timeouts en todas las operaciones
+- Índices en tenant_id + campos de búsqueda

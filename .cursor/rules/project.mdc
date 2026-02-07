@@ -1,0 +1,56 @@
+---
+description: Reglas del proyecto HomeAI API
+globs:
+  - "**/*"
+---
+
+# HomeAI API
+
+## Proyecto
+- **Nombre**: HomeAI Backend
+- **Repositorio**: git@github.com:pablodma/homeAssistant-backend.git
+- **Stack**: FastAPI + PostgreSQL
+- **Deploy**: Railway
+- **Fase actual**: 1 (POC)
+
+## Arquitectura Polyrepo
+
+```
+Repositorios:
+├── homeAssistant-backend   ← ESTE REPO (FastAPI → Railway)
+├── homeAssistant-frontend  ← Next.js → Vercel
+└── homeAssistant-asistant  ← Futuro (n8n externo por ahora)
+```
+
+**URLs:**
+- Backend: git@github.com:pablodma/homeAssistant-backend.git
+- Frontend: git@github.com:pablodma/homeAssistant-frontend.git
+- Asistente: git@github.com:pablodma/homeAssistant-asistant.git
+
+## Comunicación entre servicios
+- Frontend → Backend: REST via `NEXT_PUBLIC_API_URL`
+- n8n → Backend: REST (HTTP Request nodes)
+- Contratos API definidos en `/docs/api/openapi.yaml`
+
+## Multi-tenancy (CRÍTICO)
+- Estrategia: Shared tables con `tenant_id` en CADA tabla
+- TODA query a PostgreSQL DEBE incluir `WHERE tenant_id = $tenant_id`
+- NUNCA acceder a datos sin filtrar por tenant_id
+- Los índices compuestos SIEMPRE tienen tenant_id como primer campo
+
+## Estructura
+```
+homeAssistant-backend/
+├── src/app/
+│   ├── config/        # Settings, database
+│   ├── routers/       # API endpoints
+│   ├── services/      # Business logic
+│   ├── repositories/  # Data access
+│   ├── schemas/       # Pydantic models
+│   └── middleware/    # Auth, CORS
+├── tests/
+├── docs/
+├── scripts/db/
+├── Dockerfile
+└── pyproject.toml
+```
