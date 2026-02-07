@@ -19,15 +19,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
     
-    # Initialize database pool
-    await get_pool()
-    print("Database pool initialized")
+    # Initialize database pool (non-blocking)
+    try:
+        await get_pool()
+        print("Database pool initialized")
+    except Exception as e:
+        print(f"Warning: Database connection failed: {e}")
+        print("App will start but database operations will fail")
     
     yield
     
     # Shutdown
-    await close_pool()
-    print("Database pool closed")
+    try:
+        await close_pool()
+        print("Database pool closed")
+    except Exception:
+        pass
 
 
 def create_app() -> FastAPI:
