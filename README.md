@@ -7,9 +7,11 @@ Backend API para HomeAI Assistant, construido con FastAPI.
 Sistema de asistente virtual del hogar multi-tenant que gestiona presupuestos, agenda, recordatorios y listas de compras via WhatsApp.
 
 ### Repositorios relacionados
-- **homeai-api** (este repo) - Backend FastAPI → Railway
-- **homeai-web** - Frontend Next.js → Vercel
-- **homeai-bot** (futuro) - Orquestación IA → Railway
+| Local | GitHub | Deploy |
+|-------|--------|--------|
+| homeai-api | [homeAssistant-backend](https://github.com/pablodma/homeAssistant-backend) ← ESTE | Railway |
+| homeai-web | [homeAssistant-frontend](https://github.com/pablodma/homeAssistant-frontend) | Vercel |
+| homeai-assis (futuro) | [homeAssistant-asistant](https://github.com/pablodma/homeAssistant-asistant) | Railway |
 
 ## Stack
 

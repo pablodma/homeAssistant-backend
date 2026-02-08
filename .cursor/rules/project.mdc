@@ -16,13 +16,19 @@ globs:
 ## Arquitectura Polyrepo
 
 ```
-Repositorios:
-├── homeAssistant-backend   ← ESTE REPO (FastAPI → Railway)
-├── homeAssistant-frontend  ← Next.js → Vercel
-└── homeAssistant-asistant  ← Futuro (n8n externo por ahora)
+Estructura local:
+d:\Proyectos\homeAsiss\           ← Carpeta contenedora (NO es repo)
+├── homeai-api/                   ← ESTE PROYECTO (FastAPI → Railway)
+├── homeai-web/                   ← Frontend Next.js → Vercel
+└── homeai-assis/                 ← Futuro (Agente IA)
+
+Repositorios GitHub:
+├── homeAssistant-backend         ← ESTE REPO
+├── homeAssistant-frontend        ← Frontend
+└── homeAssistant-asistant        ← Futuro
 ```
 
-**URLs:**
+**URLs de Repositorios:**
 - Backend: git@github.com:pablodma/homeAssistant-backend.git
 - Frontend: git@github.com:pablodma/homeAssistant-frontend.git
 - Asistente: git@github.com:pablodma/homeAssistant-asistant.git
