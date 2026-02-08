@@ -20,12 +20,12 @@ Estructura local:
 d:\Proyectos\homeAsiss\           ← Carpeta contenedora (NO es repo)
 ├── homeai-api/                   ← ESTE PROYECTO (FastAPI → Railway)
 ├── homeai-web/                   ← Frontend Next.js → Vercel
-└── homeai-assis/                 ← Futuro (Agente IA)
+└── homeai-assis/                 ← Bot WhatsApp (FastAPI → Railway) ✅
 
 Repositorios GitHub:
 ├── homeAssistant-backend         ← ESTE REPO
 ├── homeAssistant-frontend        ← Frontend
-└── homeAssistant-asistant        ← Futuro
+└── homeAssistant-asistant        ← Bot WhatsApp ✅
 ```
 
 **URLs de Repositorios:**
@@ -33,9 +33,16 @@ Repositorios GitHub:
 - Frontend: git@github.com:pablodma/homeAssistant-frontend.git
 - Asistente: git@github.com:pablodma/homeAssistant-asistant.git
 
+**URLs de Deploy:**
+- Backend: https://homeassistant-backend-production.up.railway.app
+- Frontend: https://homeassistant-frontend.vercel.app
+- Bot: https://homeai-assis-production.up.railway.app
+
 ## Comunicación entre servicios
 - Frontend → Backend: REST via `NEXT_PUBLIC_API_URL`
-- n8n → Backend: REST (HTTP Request nodes)
+- Bot → Backend: REST via `BACKEND_API_URL` (para Finance, Calendar)
+- Bot → WhatsApp: Meta Cloud API (webhook)
+- Bot → OpenAI: API para LLM
 - Contratos API definidos en `/docs/api/openapi.yaml`
 
 ## Multi-tenancy (CRÍTICO)
@@ -72,10 +79,36 @@ homeAssistant-backend/
 ### Calendar Agent ✅
 - Gestión de eventos con sincronización Google Calendar
 - OAuth individual por usuario via WhatsApp
-- Detección NLP de eventos (opcional, corre en n8n)
 - Endpoints: `/agent/calendar/*`
 - Regla Cursor: `.cursor/rules/calendar-agent.mdc`
 - Prompt: `docs/prompts/calendar-agent.md`
+
+### Reminder Agent ✅ (en homeai-assis)
+- Recordatorios y alertas
+- Almacenamiento en DB: tabla `reminders`
+
+### Shopping Agent ✅ (en homeai-assis)
+- Listas de compras
+- Almacenamiento en DB: tabla `shopping_items`
+
+### Vehicle Agent ✅ (en homeai-assis)
+- Gestión de vehículos y mantenimiento
+- Almacenamiento en DB: tablas `vehicles`, `vehicle_services`, `vehicle_reminders`
+
+## Panel de Administración
+
+El backend expone endpoints admin para gestionar los agentes:
+
+### Endpoints Admin
+- `GET /api/v1/tenants/{tenant_id}/admin/agents` - Lista todos los agentes
+- `GET /api/v1/tenants/{tenant_id}/admin/agents/{name}/prompt` - Obtener prompt de un agente
+- `PUT /api/v1/tenants/{tenant_id}/admin/agents/{name}/prompt` - Actualizar prompt
+- `GET /api/v1/tenants/{tenant_id}/admin/interactions` - Lista interacciones
+- `GET /api/v1/tenants/{tenant_id}/admin/stats` - Estadísticas
+
+### Tablas de Admin
+- `agent_prompts` - Prompts editables por agente (versionados)
+- `agent_interactions` - Log de todas las interacciones del bot
 
 **Flujo OAuth Google Calendar:**
 1. Bot detecta que usuario no tiene calendario conectado

@@ -1,0 +1,272 @@
+"""Admin repository for agent management."""
+
+from datetime import datetime, timedelta
+from typing import Any, Optional
+from uuid import UUID
+
+import structlog
+
+from ..config.database import get_pool
+
+logger = structlog.get_logger()
+
+
+class AdminRepository:
+    """Repository for admin operations."""
+
+    # =====================================================
+    # AGENT PROMPTS
+    # =====================================================
+
+    async def get_prompts(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Get all active prompts for a tenant."""
+        pool = await get_pool()
+        query = """
+            SELECT id, tenant_id, agent_name, prompt_content, version, is_active, 
+                   created_at, updated_at
+            FROM agent_prompts
+            WHERE tenant_id = $1 AND is_active = true
+            ORDER BY agent_name
+        """
+        rows = await pool.fetch(query, tenant_id)
+        return [dict(row) for row in rows]
+
+    async def get_prompt(
+        self, tenant_id: str, agent_name: str
+    ) -> Optional[dict[str, Any]]:
+        """Get active prompt for an agent."""
+        pool = await get_pool()
+        query = """
+            SELECT id, tenant_id, agent_name, prompt_content, version, is_active,
+                   created_at, updated_at
+            FROM agent_prompts
+            WHERE tenant_id = $1 AND agent_name = $2 AND is_active = true
+        """
+        row = await pool.fetchrow(query, tenant_id, agent_name)
+        return dict(row) if row else None
+
+    async def create_prompt(
+        self,
+        tenant_id: str,
+        agent_name: str,
+        prompt_content: str,
+        created_by: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Create a new prompt (deactivates previous version)."""
+        pool = await get_pool()
+
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                # Deactivate previous version
+                await conn.execute(
+                    """
+                    UPDATE agent_prompts 
+                    SET is_active = false, updated_at = NOW()
+                    WHERE tenant_id = $1 AND agent_name = $2 AND is_active = true
+                    """,
+                    tenant_id,
+                    agent_name,
+                )
+
+                # Get next version number
+                version_row = await conn.fetchrow(
+                    """
+                    SELECT COALESCE(MAX(version), 0) + 1 as next_version
+                    FROM agent_prompts
+                    WHERE tenant_id = $1 AND agent_name = $2
+                    """,
+                    tenant_id,
+                    agent_name,
+                )
+                next_version = version_row["next_version"]
+
+                # Insert new prompt
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO agent_prompts (
+                        tenant_id, agent_name, prompt_content, version, is_active, created_by
+                    ) VALUES ($1, $2, $3, $4, true, $5)
+                    RETURNING id, tenant_id, agent_name, prompt_content, version, is_active,
+                              created_at, updated_at
+                    """,
+                    tenant_id,
+                    agent_name,
+                    prompt_content,
+                    next_version,
+                    created_by,
+                )
+
+                return dict(row)
+
+    async def get_prompt_history(
+        self, tenant_id: str, agent_name: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
+        """Get version history for a prompt."""
+        pool = await get_pool()
+        query = """
+            SELECT id, version, is_active, created_at,
+                   LEFT(prompt_content, 200) as prompt_preview
+            FROM agent_prompts
+            WHERE tenant_id = $1 AND agent_name = $2
+            ORDER BY version DESC
+            LIMIT $3
+        """
+        rows = await pool.fetch(query, tenant_id, agent_name, limit)
+        return [dict(row) for row in rows]
+
+    # =====================================================
+    # AGENT INTERACTIONS
+    # =====================================================
+
+    async def get_interactions(
+        self,
+        tenant_id: str,
+        page: int = 1,
+        page_size: int = 20,
+        user_phone: Optional[str] = None,
+        agent_used: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        search: Optional[str] = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Get paginated interactions with filters."""
+        pool = await get_pool()
+
+        # Build query
+        conditions = ["tenant_id = $1"]
+        params: list[Any] = [tenant_id]
+        param_idx = 2
+
+        if user_phone:
+            conditions.append(f"user_phone = ${param_idx}")
+            params.append(user_phone)
+            param_idx += 1
+
+        if agent_used:
+            conditions.append(f"agent_used = ${param_idx}")
+            params.append(agent_used)
+            param_idx += 1
+
+        if start_date:
+            conditions.append(f"created_at >= ${param_idx}")
+            params.append(start_date)
+            param_idx += 1
+
+        if end_date:
+            conditions.append(f"created_at <= ${param_idx}")
+            params.append(end_date)
+            param_idx += 1
+
+        if search:
+            conditions.append(f"(message_in ILIKE ${param_idx} OR message_out ILIKE ${param_idx})")
+            params.append(f"%{search}%")
+            param_idx += 1
+
+        where_clause = " AND ".join(conditions)
+
+        # Count total
+        count_query = f"SELECT COUNT(*) FROM agent_interactions WHERE {where_clause}"
+        count_row = await pool.fetchrow(count_query, *params)
+        total = count_row["count"]
+
+        # Get page
+        offset = (page - 1) * page_size
+        query = f"""
+            SELECT id, user_phone, user_name,
+                   LEFT(message_in, 100) as message_preview,
+                   agent_used, sub_agent_used, response_time_ms, created_at
+            FROM agent_interactions
+            WHERE {where_clause}
+            ORDER BY created_at DESC
+            LIMIT ${param_idx} OFFSET ${param_idx + 1}
+        """
+        params.extend([page_size, offset])
+
+        rows = await pool.fetch(query, *params)
+        return [dict(row) for row in rows], total
+
+    async def get_interaction(
+        self, tenant_id: str, interaction_id: str
+    ) -> Optional[dict[str, Any]]:
+        """Get a single interaction by ID."""
+        pool = await get_pool()
+        query = """
+            SELECT id, tenant_id, user_phone, user_name, message_in, message_out,
+                   agent_used, sub_agent_used, tokens_in, tokens_out,
+                   response_time_ms, created_at, metadata
+            FROM agent_interactions
+            WHERE tenant_id = $1 AND id = $2
+        """
+        row = await pool.fetchrow(query, tenant_id, interaction_id)
+        return dict(row) if row else None
+
+    # =====================================================
+    # STATISTICS
+    # =====================================================
+
+    async def get_stats(
+        self,
+        tenant_id: str,
+        days: int = 30,
+    ) -> dict[str, Any]:
+        """Get statistics for the admin dashboard."""
+        pool = await get_pool()
+        start_date = datetime.now() - timedelta(days=days)
+
+        # Overall stats
+        overall_query = """
+            SELECT 
+                COUNT(*) as total_messages,
+                COUNT(DISTINCT user_phone) as total_users,
+                COALESCE(SUM(tokens_in + tokens_out), 0) as total_tokens,
+                AVG(response_time_ms) as avg_response_time_ms
+            FROM agent_interactions
+            WHERE tenant_id = $1 AND created_at >= $2
+        """
+        overall = await pool.fetchrow(overall_query, tenant_id, start_date)
+
+        # By agent
+        by_agent_query = """
+            SELECT 
+                agent_used as agent_name,
+                COUNT(*) as total_messages,
+                AVG(response_time_ms) as avg_response_time_ms,
+                COALESCE(SUM(tokens_in + tokens_out), 0) as total_tokens
+            FROM agent_interactions
+            WHERE tenant_id = $1 AND created_at >= $2
+            GROUP BY agent_used
+            ORDER BY total_messages DESC
+        """
+        by_agent_rows = await pool.fetch(by_agent_query, tenant_id, start_date)
+
+        # By day
+        by_day_query = """
+            SELECT 
+                DATE(created_at) as date,
+                COUNT(*) as message_count,
+                COUNT(DISTINCT user_phone) as unique_users,
+                COALESCE(SUM(tokens_in + tokens_out), 0) as total_tokens
+            FROM agent_interactions
+            WHERE tenant_id = $1 AND created_at >= $2
+            GROUP BY DATE(created_at)
+            ORDER BY date DESC
+            LIMIT 30
+        """
+        by_day_rows = await pool.fetch(by_day_query, tenant_id, start_date)
+
+        return {
+            "total_messages": overall["total_messages"],
+            "total_users": overall["total_users"],
+            "total_tokens": overall["total_tokens"],
+            "avg_response_time_ms": overall["avg_response_time_ms"],
+            "by_agent": [dict(row) for row in by_agent_rows],
+            "by_day": [
+                {
+                    "date": row["date"].strftime("%Y-%m-%d"),
+                    "message_count": row["message_count"],
+                    "unique_users": row["unique_users"],
+                    "total_tokens": row["total_tokens"],
+                }
+                for row in by_day_rows
+            ],
+        }
