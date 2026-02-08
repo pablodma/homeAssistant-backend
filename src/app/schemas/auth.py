@@ -1,16 +1,23 @@
 """Authentication schemas."""
 
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr
 
-from .common import BaseSchema, TimestampMixin
+from .common import BaseSchema
 
 
 class GoogleAuthRequest(BaseModel):
-    """Google OAuth callback request."""
+    """Google OAuth callback request - code-based flow."""
 
     code: str
+
+
+class GoogleIdTokenRequest(BaseModel):
+    """Google OAuth request with ID token from frontend."""
+    
+    id_token: str
 
 
 class TokenResponse(BaseModel):
@@ -28,12 +35,14 @@ class UserBase(BaseSchema):
     phone: str | None = None
 
 
-class UserResponse(UserBase, TimestampMixin):
+class UserResponse(UserBase):
     """User response schema."""
 
     id: UUID
     tenant_id: UUID
     role: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class AuthResponse(BaseModel):
