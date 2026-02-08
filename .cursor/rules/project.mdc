@@ -49,7 +49,7 @@ Repositorios GitHub:
 homeAssistant-backend/
 ├── src/app/
 │   ├── config/        # Settings, database
-│   ├── routers/       # API endpoints
+│   ├── routers/       # API endpoints (finance, calendar, auth, tenants)
 │   ├── services/      # Business logic
 │   ├── repositories/  # Data access
 │   ├── schemas/       # Pydantic models
@@ -57,9 +57,38 @@ homeAssistant-backend/
 ├── tests/
 ├── docs/
 ├── scripts/db/
+├── .cursor/rules/     # Cursor rules (calendar-agent.mdc, etc.)
 ├── Dockerfile
 └── pyproject.toml
 ```
+
+## Agentes Implementados
+
+### Finance Agent ✅
+- Gestión de gastos y presupuestos
+- Endpoints: `/agent/expense`, `/agent/report`, `/agent/budget`
+- Prompt: `docs/prompts/finance-agent.md`
+
+### Calendar Agent ✅
+- Gestión de eventos con sincronización Google Calendar
+- OAuth individual por usuario via WhatsApp
+- Detección NLP de eventos (opcional, corre en n8n)
+- Endpoints: `/agent/calendar/*`
+- Regla Cursor: `.cursor/rules/calendar-agent.mdc`
+- Prompt: `docs/prompts/calendar-agent.md`
+
+**Flujo OAuth Google Calendar:**
+1. Bot detecta que usuario no tiene calendario conectado
+2. Envía link de autorización por WhatsApp
+3. Usuario autoriza en Google
+4. Callback guarda tokens en `google_calendar_credentials`
+5. Frontend muestra página de éxito/error
+6. Bot confirma conexión exitosa
+
+**Tablas de DB:**
+- `events` - Eventos con campos de sync (google_event_id, sync_status, source)
+- `google_calendar_credentials` - OAuth tokens por usuario
+- `oauth_states` - Estados temporales para flujo OAuth
 
 ## Debugging con Railway MCP (OBLIGATORIO)
 
