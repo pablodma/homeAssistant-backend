@@ -125,9 +125,17 @@ async def agent_delete_expense(
 @router.patch("/agent/expense", response_model=AgentModifyExpenseResponse)
 async def agent_modify_expense(
     tenant_id: UUID,
-    request: AgentModifyExpenseRequest,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     _: Annotated[None, Depends(validate_tenant_access)],
+    # Search criteria
+    search_amount: Decimal | None = Query(None, description="Amount to search for"),
+    search_category: str | None = Query(None, description="Category to search for"),
+    search_description: str | None = Query(None, description="Description to search for"),
+    search_date: date | None = Query(None, description="Date to search for"),
+    # New values
+    new_amount: Decimal | None = Query(None, description="New amount"),
+    new_category: str | None = Query(None, description="New category"),
+    new_description: str | None = Query(None, description="New description"),
 ) -> AgentModifyExpenseResponse:
     """
     Modify an expense from the n8n agent.
@@ -136,13 +144,13 @@ async def agent_modify_expense(
     """
     result = await finance_service.modify_expense_for_agent(
         tenant_id=tenant_id,
-        search_amount=request.search_amount,
-        search_category=request.search_category,
-        search_description=request.search_description,
-        search_date=request.search_date,
-        new_amount=request.new_amount,
-        new_category=request.new_category,
-        new_description=request.new_description,
+        search_amount=search_amount,
+        search_category=search_category,
+        search_description=search_description,
+        search_date=search_date,
+        new_amount=new_amount,
+        new_category=new_category,
+        new_description=new_description,
     )
     return AgentModifyExpenseResponse(**result)
 
