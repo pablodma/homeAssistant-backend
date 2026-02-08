@@ -51,7 +51,7 @@ async def agent_log_expense(
         amount=request.amount,
         category_name=request.category,
         description=request.description,
-        expense_date=request.date,
+        expense_date=request.expense_date,
     )
 
 

@@ -155,7 +155,7 @@ class AgentLogExpenseRequest(BaseSchema):
     amount: Decimal = Field(..., gt=0, description="Expense amount")
     category: str = Field(..., description="Category name (will be matched or created)")
     description: str | None = Field(None, description="Optional description")
-    date: date | None = Field(None, description="Expense date (defaults to today)")
+    expense_date: date | None = Field(None, description="Expense date (defaults to today)")
 
 
 class AgentLogExpenseResponse(BaseSchema):

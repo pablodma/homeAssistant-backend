@@ -60,3 +60,33 @@ homeAssistant-backend/
 ├── Dockerfile
 └── pyproject.toml
 ```
+
+## Debugging con Railway MCP (OBLIGATORIO)
+
+**SIEMPRE que trabajes con este backend, usa las herramientas MCP de Railway para debugging:**
+
+### Herramientas disponibles:
+- `Railway_HomeAs-get-logs`: Obtener logs de build o deploy
+- `Railway_HomeAs-list-deployments`: Ver lista de deployments con IDs y estados
+- `Railway_HomeAs-list-services`: Ver servicios disponibles
+- `Railway_HomeAs-list-variables`: Ver variables de entorno
+
+### Cuándo usar:
+1. **Al investigar errores**: Siempre obtener logs de Railway antes de proponer soluciones
+2. **Después de un deploy**: Verificar que el servicio arrancó correctamente
+3. **Al debuggear issues de producción**: Usar `filter` para buscar errores específicos
+4. **Al verificar configuración**: Consultar variables de entorno en Railway
+
+### Ejemplo de uso:
+```
+# Para obtener logs de deploy (últimas 100 líneas):
+Railway_HomeAs-get-logs(workspacePath="d:\\Proyectos\\homeAsiss\\homeai-api", logType="deploy", lines=100)
+
+# Para buscar errores específicos:
+Railway_HomeAs-get-logs(workspacePath="d:\\Proyectos\\homeAsiss\\homeai-api", logType="deploy", filter="@level:error")
+
+# Para ver deployments recientes:
+Railway_HomeAs-list-deployments(workspacePath="d:\\Proyectos\\homeAsiss\\homeai-api", json=true)
+```
+
+**IMPORTANTE**: No asumas el estado del servicio. SIEMPRE consulta Railway para obtener información real.
