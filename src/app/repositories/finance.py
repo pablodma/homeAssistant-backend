@@ -28,7 +28,7 @@ async def create_expense(
             INSERT INTO expenses (tenant_id, amount, category_id, description, expense_date, idempotency_key)
             VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id, tenant_id, amount, category_id, description, expense_date, 
-                      idempotency_key, created_at, updated_at
+                      idempotency_key, created_at
             """,
             tenant_id, amount, category_id, description, expense_date, idempotency_key
         )
