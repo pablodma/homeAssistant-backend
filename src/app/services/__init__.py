@@ -1,5 +1,5 @@
 """Business logic services."""
 
-from . import auth, finance
+from . import auth, calendar, event_detector, finance, google_calendar
 
-__all__ = ["auth", "finance"]
+__all__ = ["auth", "calendar", "event_detector", "finance", "google_calendar"]

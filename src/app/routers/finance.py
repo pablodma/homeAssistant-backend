@@ -125,6 +125,34 @@ async def agent_delete_expense(
     return AgentDeleteExpenseResponse(**result)
 
 
+@router.delete("/agent/expenses/bulk")
+async def agent_delete_expenses_bulk(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    period: str | None = Query(None, description="Period: today, week, month, year, all"),
+    category: str | None = Query(None, description="Category to filter"),
+    confirm: bool = Query(False, description="Must be true to confirm deletion"),
+) -> dict:
+    """
+    Delete multiple expenses from the n8n agent.
+    
+    Period options:
+    - today/hoy: expenses from today
+    - week/semana: expenses from this week
+    - month/mes: expenses from this month
+    - year/año: expenses from this year
+    - all/todos/todo: ALL expenses (requires confirm=true)
+    """
+    result = await finance_service.delete_expenses_bulk_for_agent(
+        tenant_id=tenant_id,
+        period=period,
+        category_name=category,
+        confirm=confirm,
+    )
+    return result
+
+
 @router.patch("/agent/expense", response_model=AgentModifyExpenseResponse)
 async def agent_modify_expense(
     tenant_id: UUID,

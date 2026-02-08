@@ -1,5 +1,6 @@
 """Pydantic schemas for API request/response validation."""
 
+from . import calendar as calendar_schemas
 from .common import (
     BaseSchema,
     ErrorResponse,
@@ -18,4 +19,5 @@ __all__ = [
     "PaginationParams",
     "TenantMixin",
     "TimestampMixin",
+    "calendar_schemas",
 ]

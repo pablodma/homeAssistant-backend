@@ -145,6 +145,45 @@ async def delete_expense(tenant_id: UUID, expense_id: UUID) -> bool:
         return result == "DELETE 1"
 
 
+async def delete_expenses_bulk(
+    tenant_id: UUID,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    category_id: UUID | None = None,
+    delete_all: bool = False,
+) -> int:
+    """Delete multiple expenses matching criteria. Returns count of deleted."""
+    pool = await get_pool()
+    
+    if not delete_all and not start_date and not end_date and not category_id:
+        return 0  # Safety: require at least one filter or explicit delete_all
+    
+    query = "DELETE FROM expenses WHERE tenant_id = $1"
+    params: list[Any] = [tenant_id]
+    param_idx = 2
+    
+    if start_date:
+        query += f" AND expense_date >= ${param_idx}"
+        params.append(start_date)
+        param_idx += 1
+    
+    if end_date:
+        query += f" AND expense_date <= ${param_idx}"
+        params.append(end_date)
+        param_idx += 1
+    
+    if category_id:
+        query += f" AND category_id = ${param_idx}"
+        params.append(category_id)
+        param_idx += 1
+    
+    async with pool.acquire() as conn:
+        result = await conn.execute(query, *params)
+        # Result is like "DELETE 5"
+        count = int(result.split(" ")[1]) if result else 0
+        return count
+
+
 async def search_expense(
     tenant_id: UUID,
     amount: Decimal | None = None,

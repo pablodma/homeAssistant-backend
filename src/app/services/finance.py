@@ -476,3 +476,71 @@ async def modify_expense_for_agent(
         message="❌ Error al modificar el gasto",
         modified_expense=None,
     ).model_dump()
+
+
+async def delete_expenses_bulk_for_agent(
+    tenant_id: UUID,
+    period: str | None = None,
+    category_name: str | None = None,
+    confirm: bool = False,
+) -> dict:
+    """Delete multiple expenses for the agent."""
+    
+    if not confirm:
+        return {
+            "success": False,
+            "message": "⚠️ Para eliminar gastos, necesito confirmación. Decime 'confirmo' o 'sí, eliminar'.",
+            "deleted_count": 0,
+        }
+    
+    # Determine date range based on period
+    today = date.today()
+    start_date = None
+    end_date = None
+    delete_all = False
+    
+    if period == "today" or period == "hoy":
+        start_date = today
+        end_date = today
+    elif period == "week" or period == "semana":
+        start_date = today - timedelta(days=today.weekday())
+        end_date = today
+    elif period == "month" or period == "mes":
+        start_date = today.replace(day=1)
+        end_date = today
+    elif period == "year" or period == "año":
+        start_date = today.replace(month=1, day=1)
+        end_date = today
+    elif period == "all" or period == "todos" or period == "todo":
+        delete_all = True
+    
+    # Resolve category
+    category_id = None
+    if category_name:
+        cat = await repo.get_budget_category_by_name(tenant_id, category_name)
+        if cat:
+            category_id = cat["id"]
+    
+    # Perform bulk delete
+    deleted_count = await repo.delete_expenses_bulk(
+        tenant_id=tenant_id,
+        start_date=start_date,
+        end_date=end_date,
+        category_id=category_id,
+        delete_all=delete_all,
+    )
+    
+    if deleted_count > 0:
+        period_text = period or "seleccionado"
+        cat_text = f" de {category_name}" if category_name else ""
+        return {
+            "success": True,
+            "message": f"🗑️ Se eliminaron {deleted_count} gasto(s){cat_text} del período {period_text}.",
+            "deleted_count": deleted_count,
+        }
+    
+    return {
+        "success": False,
+        "message": "❌ No se encontraron gastos que coincidan con los criterios.",
+        "deleted_count": 0,
+    }

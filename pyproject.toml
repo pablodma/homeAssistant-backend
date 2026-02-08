@@ -13,6 +13,14 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "httpx>=0.26.0",
     "structlog>=24.1.0",
+    # Google Calendar integration
+    "google-api-python-client>=2.118.0",
+    "google-auth-oauthlib>=1.2.0",
+    "google-auth-httplib2>=0.2.0",
+    # OpenAI for NLP event detection
+    "openai>=1.12.0",
+    # Timezone support
+    "pytz>=2024.1",
 ]
 
 [project.optional-dependencies]
