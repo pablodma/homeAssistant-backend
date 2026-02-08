@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from ..middleware.auth import get_current_user, require_auth
+from ..middleware.auth import get_current_user
 from ..schemas.admin import (
     AgentInfo,
     AgentPromptHistory,
@@ -16,6 +16,7 @@ from ..schemas.admin import (
     InteractionResponse,
     StatsResponse,
 )
+from ..schemas.auth import CurrentUser
 from ..services.admin import AdminService
 
 router = APIRouter(prefix="/tenants/{tenant_id}/admin", tags=["Admin"])
@@ -35,7 +36,7 @@ def get_admin_service() -> AdminService:
 async def list_agents(
     tenant_id: UUID,
     service: AdminService = Depends(get_admin_service),
-    _: dict = Depends(require_auth),
+    _: CurrentUser = Depends(get_current_user),
 ) -> list[AgentInfo]:
     """List all available agents with their status.
 
@@ -55,7 +56,7 @@ async def get_agent_prompt(
     tenant_id: UUID,
     agent_name: str,
     service: AdminService = Depends(get_admin_service),
-    _: dict = Depends(require_auth),
+    _: CurrentUser = Depends(get_current_user),
 ) -> Optional[AgentPromptResponse]:
     """Get the active prompt for an agent.
 
@@ -71,7 +72,7 @@ async def update_agent_prompt(
     agent_name: str,
     body: AgentPromptUpdate,
     service: AdminService = Depends(get_admin_service),
-    user: dict = Depends(require_auth),
+    user: CurrentUser = Depends(get_current_user),
 ) -> AgentPromptResponse:
     """Update the prompt for an agent.
 
@@ -82,7 +83,7 @@ async def update_agent_prompt(
         tenant_id=str(tenant_id),
         agent_name=agent_name,
         prompt_content=body.prompt_content,
-        created_by=user.get("email"),
+        created_by=user.email,
     )
 
 
@@ -92,7 +93,7 @@ async def get_prompt_history(
     agent_name: str,
     limit: int = Query(10, ge=1, le=50),
     service: AdminService = Depends(get_admin_service),
-    _: dict = Depends(require_auth),
+    _: CurrentUser = Depends(get_current_user),
 ) -> list[AgentPromptHistory]:
     """Get version history for an agent's prompt.
 
@@ -118,7 +119,7 @@ async def list_interactions(
     end_date: Optional[datetime] = None,
     search: Optional[str] = None,
     service: AdminService = Depends(get_admin_service),
-    _: dict = Depends(require_auth),
+    _: CurrentUser = Depends(get_current_user),
 ) -> InteractionListResponse:
     """List bot interactions with filtering and pagination.
 
@@ -142,7 +143,7 @@ async def get_interaction(
     tenant_id: UUID,
     interaction_id: UUID,
     service: AdminService = Depends(get_admin_service),
-    _: dict = Depends(require_auth),
+    _: CurrentUser = Depends(get_current_user),
 ) -> InteractionResponse:
     """Get details of a specific interaction.
 
@@ -165,7 +166,7 @@ async def get_stats(
     tenant_id: UUID,
     days: int = Query(30, ge=1, le=365),
     service: AdminService = Depends(get_admin_service),
-    _: dict = Depends(require_auth),
+    _: CurrentUser = Depends(get_current_user),
 ) -> StatsResponse:
     """Get statistics for the admin dashboard.
 

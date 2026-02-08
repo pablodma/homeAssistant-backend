@@ -16,10 +16,12 @@ CREATE TABLE IF NOT EXISTS agent_prompts (
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    created_by VARCHAR(100),
-    
-    CONSTRAINT unique_active_prompt UNIQUE (tenant_id, agent_name) WHERE (is_active = true)
+    created_by VARCHAR(100)
 );
+
+-- Partial unique index for active prompts
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_active_prompt 
+ON agent_prompts(tenant_id, agent_name) WHERE is_active = true;
 
 CREATE INDEX IF NOT EXISTS idx_agent_prompts_tenant ON agent_prompts(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_agent_prompts_agent ON agent_prompts(tenant_id, agent_name);
