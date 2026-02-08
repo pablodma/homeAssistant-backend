@@ -4,165 +4,239 @@ globs:
   - "**/*"
 ---
 
-# HomeAI API
+# HomeAI API - Backend Principal
 
 ## Proyecto
 - **Nombre**: HomeAI Backend
 - **Repositorio**: git@github.com:pablodma/homeAssistant-backend.git
-- **Stack**: FastAPI + PostgreSQL
-- **Deploy**: Railway
-- **Fase actual**: 1 (POC)
+- **Stack**: FastAPI + PostgreSQL + asyncpg
+- **Deploy**: Railway (https://homeassistant-backend-production.up.railway.app)
+- **Fase actual**: 2 (MVP - Código propio, sin N8N)
 
-## Arquitectura Polyrepo
+## Arquitectura General
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         ARQUITECTURA                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────┐     ┌──────────────┐     ┌──────────────────┐    │
+│  │ WhatsApp │────▶│ homeai-assis │────▶│ homeai-api       │    │
+│  │ (Meta)   │◀────│ (Bot)        │     │ (Backend)        │    │
+│  └──────────┘     └──────┬───────┘     └────────┬─────────┘    │
+│                          │                       │               │
+│                          │    ┌─────────────────┐│               │
+│                          └───▶│ PostgreSQL      │◀               │
+│                               │ (Railway)       │                │
+│  ┌──────────┐                 └─────────────────┘               │
+│  │ Browser  │────▶┌──────────────┐                              │
+│  └──────────┘     │ homeai-web   │──────────────────────────────┘
+│                   │ (Vercel)     │
+│                   └──────────────┘
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Polyrepo
 
 ```
 Estructura local:
 d:\Proyectos\homeAsiss\           ← Carpeta contenedora (NO es repo)
-├── homeai-api/                   ← ESTE PROYECTO (FastAPI → Railway)
+├── homeai-api/                   ← ESTE PROYECTO (Backend → Railway)
 ├── homeai-web/                   ← Frontend Next.js → Vercel
-└── homeai-assis/                 ← Bot WhatsApp (FastAPI → Railway) ✅
+├── homeai-assis/                 ← Bot WhatsApp (→ Railway)
+└── .credentials/                 ← Credenciales (NO commitear)
 
 Repositorios GitHub:
 ├── homeAssistant-backend         ← ESTE REPO
-├── homeAssistant-frontend        ← Frontend
-└── homeAssistant-asistant        ← Bot WhatsApp ✅
+├── homeAssistant-frontend        
+└── homeAssistant-asistant        
+
+URLs de Deploy:
+├── Backend:  https://homeassistant-backend-production.up.railway.app
+├── Frontend: https://homeassistant-frontend.vercel.app
+└── Bot:      https://homeai-assis-production.up.railway.app
 ```
 
-**URLs de Repositorios:**
-- Backend: git@github.com:pablodma/homeAssistant-backend.git
-- Frontend: git@github.com:pablodma/homeAssistant-frontend.git
-- Asistente: git@github.com:pablodma/homeAssistant-asistant.git
+## Responsabilidades de este Servicio
 
-**URLs de Deploy:**
-- Backend: https://homeassistant-backend-production.up.railway.app
-- Frontend: https://homeassistant-frontend.vercel.app
-- Bot: https://homeai-assis-production.up.railway.app
+| Responsabilidad | Descripción |
+|-----------------|-------------|
+| **Autenticación** | JWT tokens, Google OAuth |
+| **Multi-tenancy** | Gestión de tenants y usuarios |
+| **Finance** | Gastos, presupuestos, reportes |
+| **Calendar** | Eventos, integración Google Calendar |
+| **Admin API** | Endpoints para panel de administración |
 
-## Comunicación entre servicios
-- Frontend → Backend: REST via `NEXT_PUBLIC_API_URL`
-- Bot → Backend: REST via `BACKEND_API_URL` (para Finance, Calendar)
-- Bot → WhatsApp: Meta Cloud API (webhook)
-- Bot → OpenAI: API para LLM
-- Contratos API definidos en `/docs/api/openapi.yaml`
+## Comunicación entre Servicios
 
-## Multi-tenancy (CRÍTICO)
-- Estrategia: Shared tables con `tenant_id` en CADA tabla
-- TODA query a PostgreSQL DEBE incluir `WHERE tenant_id = $tenant_id`
-- NUNCA acceder a datos sin filtrar por tenant_id
-- Los índices compuestos SIEMPRE tienen tenant_id como primer campo
+| Origen | Destino | Método | Propósito |
+|--------|---------|--------|-----------|
+| Frontend → Backend | REST | CRUD operaciones, auth |
+| Bot → Backend | REST | Finance API, Calendar API |
+| Bot → DB | asyncpg | Reminders, Shopping, Vehicles, Logs |
+| Backend → Google | OAuth2 | Calendar sync |
 
-## Estructura
+## Estructura del Proyecto
+
 ```
-homeAssistant-backend/
+homeai-api/
 ├── src/app/
-│   ├── config/        # Settings, database
-│   ├── routers/       # API endpoints (finance, calendar, auth, tenants)
-│   ├── services/      # Business logic
-│   ├── repositories/  # Data access
-│   ├── schemas/       # Pydantic models
-│   └── middleware/    # Auth, CORS
+│   ├── config/           # Settings, database pool
+│   ├── routers/          # API endpoints
+│   │   ├── admin.py      # Panel admin endpoints
+│   │   ├── auth.py       # Autenticación
+│   │   ├── calendar.py   # Eventos y Google Calendar
+│   │   ├── finance.py    # Gastos y presupuestos
+│   │   ├── health.py     # Health checks
+│   │   └── tenants.py    # Gestión de tenants
+│   ├── services/         # Business logic
+│   ├── repositories/     # Data access layer
+│   ├── schemas/          # Pydantic models
+│   └── middleware/       # Auth middleware
+├── scripts/db/           # SQL migrations
 ├── tests/
 ├── docs/
-├── scripts/db/
-├── .cursor/rules/     # Cursor rules (calendar-agent.mdc, etc.)
+│   └── prompts/          # Agent prompts de referencia
+├── .cursor/rules/        # Cursor rules
 ├── Dockerfile
 └── pyproject.toml
 ```
 
-## Agentes Implementados
+## Multi-tenancy (CRÍTICO)
 
-### Finance Agent ✅
-- Gestión de gastos y presupuestos
-- Endpoints: `/agent/expense`, `/agent/report`, `/agent/budget`
-- Prompt: `docs/prompts/finance-agent.md`
-
-### Calendar Agent ✅
-- Gestión de eventos con sincronización Google Calendar
-- OAuth individual por usuario via WhatsApp
-- Endpoints: `/agent/calendar/*`
-- Regla Cursor: `.cursor/rules/calendar-agent.mdc`
-- Prompt: `docs/prompts/calendar-agent.md`
-
-### Reminder Agent ✅ (en homeai-assis)
-- Recordatorios y alertas
-- Almacenamiento en DB: tabla `reminders`
-
-### Shopping Agent ✅ (en homeai-assis)
-- Listas de compras
-- Almacenamiento en DB: tabla `shopping_items`
-
-### Vehicle Agent ✅ (en homeai-assis)
-- Gestión de vehículos y mantenimiento
-- Almacenamiento en DB: tablas `vehicles`, `vehicle_services`, `vehicle_reminders`
-
-## Panel de Administración
-
-El backend expone endpoints admin para gestionar los agentes:
-
-### Endpoints Admin
-- `GET /api/v1/tenants/{tenant_id}/admin/agents` - Lista todos los agentes
-- `GET /api/v1/tenants/{tenant_id}/admin/agents/{name}/prompt` - Obtener prompt de un agente
-- `PUT /api/v1/tenants/{tenant_id}/admin/agents/{name}/prompt` - Actualizar prompt
-- `GET /api/v1/tenants/{tenant_id}/admin/interactions` - Lista interacciones
-- `GET /api/v1/tenants/{tenant_id}/admin/stats` - Estadísticas
-
-### Tablas de Admin
-- `agent_prompts` - Prompts editables por agente (versionados)
-- `agent_interactions` - Log de todas las interacciones del bot
-
-**Flujo OAuth Google Calendar:**
-1. Bot detecta que usuario no tiene calendario conectado
-2. Envía link de autorización por WhatsApp
-3. Usuario autoriza en Google
-4. Callback guarda tokens en `google_calendar_credentials`
-5. Frontend muestra página de éxito/error
-6. Bot confirma conexión exitosa
-
-**Tablas de DB:**
-- `events` - Eventos con campos de sync (google_event_id, sync_status, source)
-- `google_calendar_credentials` - OAuth tokens por usuario
-- `oauth_states` - Estados temporales para flujo OAuth
-
-## Debugging con Railway MCP (OBLIGATORIO)
-
-**SIEMPRE que trabajes con este backend, usa las herramientas MCP de Railway para debugging:**
-
-### Herramientas disponibles:
-- `Railway_HomeAs-get-logs`: Obtener logs de build o deploy
-- `Railway_HomeAs-list-deployments`: Ver lista de deployments con IDs y estados
-- `Railway_HomeAs-list-services`: Ver servicios disponibles
-- `Railway_HomeAs-list-variables`: Ver variables de entorno
-
-### Cuándo usar:
-1. **Al investigar errores**: Siempre obtener logs de Railway antes de proponer soluciones
-2. **Después de un deploy**: Verificar que el servicio arrancó correctamente
-3. **Al debuggear issues de producción**: Usar `filter` para buscar errores específicos
-4. **Al verificar configuración**: Consultar variables de entorno en Railway
-
-### Ejemplo de uso:
 ```
-# Para obtener logs de deploy (últimas 100 líneas):
-Railway_HomeAs-get-logs(workspacePath="d:\\Proyectos\\homeAsiss\\homeai-api", logType="deploy", lines=100)
-
-# Para buscar errores específicos:
-Railway_HomeAs-get-logs(workspacePath="d:\\Proyectos\\homeAsiss\\homeai-api", logType="deploy", filter="@level:error")
-
-# Para ver deployments recientes:
-Railway_HomeAs-list-deployments(workspacePath="d:\\Proyectos\\homeAsiss\\homeai-api", json=true)
+⚠️ REGLA DE ORO: TODA query a PostgreSQL DEBE incluir WHERE tenant_id = $tenant_id
 ```
 
-**IMPORTANTE**: No asumas el estado del servicio. SIEMPRE consulta Railway para obtener información real.
+- **Estrategia**: Shared tables con `tenant_id` como discriminador
+- **Índices**: Siempre compuestos con `tenant_id` como primer campo
+- **Validación**: Middleware verifica tenant_id del JWT contra recursos
+- **RLS**: Row Level Security como segunda capa de defensa
 
-## Testing de Endpoints (OBLIGATORIO)
+## Endpoints API
 
-**NUNCA pidas al usuario que ejecute curl o pruebe endpoints manualmente. SIEMPRE ejecuta los comandos directamente:**
+### Autenticación
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/api/v1/auth/register` | Registro de usuario |
+| POST | `/api/v1/auth/login` | Login → JWT |
+| GET | `/api/v1/auth/me` | Usuario actual |
 
-- Usa la herramienta Shell para ejecutar `curl` o `Invoke-RestMethod` directamente
-- Verifica respuestas de la API sin intervención del usuario
-- Si necesitas probar un endpoint, hazlo tú mismo
+### Finance
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/api/v1/tenants/{id}/agent/expense` | Registrar gasto (usado por bot) |
+| GET | `/api/v1/tenants/{id}/agent/report` | Reporte de gastos |
+| GET | `/api/v1/tenants/{id}/agent/budget` | Estado de presupuesto |
+| GET | `/api/v1/tenants/{id}/expenses` | Listar gastos (web) |
+| POST | `/api/v1/tenants/{id}/budgets` | Crear presupuesto |
 
-### Ejemplo:
-```powershell
-# En lugar de decir "ejecuta este curl", ejecutarlo directamente:
-curl -X GET "https://api.example.com/endpoint" -H "Authorization: Bearer $token"
+### Calendar
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/api/v1/tenants/{id}/agent/calendar/events` | Crear evento |
+| GET | `/api/v1/tenants/{id}/agent/calendar/events` | Listar eventos |
+| GET | `/api/v1/tenants/{id}/calendar/oauth/url` | URL OAuth Google |
+| GET | `/api/v1/tenants/{id}/calendar/oauth/callback` | Callback OAuth |
+
+### Admin
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| GET | `/api/v1/tenants/{id}/admin/agents` | Lista agentes |
+| GET | `/api/v1/tenants/{id}/admin/agents/{name}/prompt` | Obtener prompt |
+| PUT | `/api/v1/tenants/{id}/admin/agents/{name}/prompt` | Actualizar prompt |
+| GET | `/api/v1/tenants/{id}/admin/interactions` | Lista interacciones |
+| GET | `/api/v1/tenants/{id}/admin/interactions/{id}` | Detalle interacción |
+| GET | `/api/v1/tenants/{id}/admin/stats` | Estadísticas |
+
+## Base de Datos
+
+### Tablas Principales
+
+| Tabla | Responsable | Descripción |
+|-------|-------------|-------------|
+| `tenants` | Backend | Hogares/cuentas |
+| `users` | Backend | Usuarios del sistema |
+| `expenses` | Backend | Gastos registrados |
+| `budgets` | Backend | Presupuestos mensuales |
+| `events` | Backend | Eventos de calendario |
+| `google_calendar_credentials` | Backend | OAuth tokens Google |
+| `agent_prompts` | Backend | Prompts editables (versionados) |
+| `agent_interactions` | Bot | Log de interacciones |
+| `chat_sessions` | Bot | Sesiones de chat |
+| `chat_messages` | Bot | Mensajes de chat |
+| `reminders` | Bot | Recordatorios |
+| `shopping_items` | Bot | Items de listas de compras |
+| `vehicles` | Bot | Vehículos |
+| `vehicle_services` | Bot | Servicios de vehículos |
+| `vehicle_reminders` | Bot | Recordatorios de vehículos |
+
+### Migraciones
+Ubicación: `scripts/db/`
+- `001_initial.sql` - Estructura inicial
+- `002_calendar_sync.sql` - Google Calendar integration
+- `003_agent_admin.sql` - Tablas de admin y bot
+
+## Variables de Entorno
+
+| Variable | Descripción | Requerida |
+|----------|-------------|-----------|
+| `DATABASE_URL` | PostgreSQL connection string | ✅ |
+| `JWT_SECRET_KEY` | Secret para firmar JWT | ✅ |
+| `JWT_ALGORITHM` | Algoritmo JWT (HS256) | ✅ |
+| `GOOGLE_CLIENT_ID` | OAuth Google | ✅ |
+| `GOOGLE_CLIENT_SECRET` | OAuth Google | ✅ |
+| `FRONTEND_URL` | URL del frontend | ✅ |
+| `PORT` | Puerto (Railway lo setea) | Auto |
+
+## Debugging con Railway MCP
+
+**SIEMPRE usar herramientas MCP de Railway para debugging:**
+
+```python
+# Obtener logs de deploy
+Railway_HomeAs-get-logs(
+    workspacePath="d:\\Proyectos\\homeAsiss\\homeai-api", 
+    logType="deploy", 
+    lines=100
+)
+
+# Buscar errores específicos
+Railway_HomeAs-get-logs(
+    workspacePath="d:\\Proyectos\\homeAsiss\\homeai-api", 
+    logType="deploy", 
+    filter="@level:error"
+)
+
+# Ver deployments recientes
+Railway_HomeAs-list-deployments(
+    workspacePath="d:\\Proyectos\\homeAsiss\\homeai-api", 
+    json=true
+)
+
+# Ver variables de entorno
+Railway_HomeAs-list-variables(
+    workspacePath="d:\\Proyectos\\homeAsiss\\homeai-api"
+)
 ```
+
+## Testing
+
+- **Framework**: pytest + pytest-asyncio
+- **DB Testing**: Fixtures con base de datos de test
+- **Multi-tenant**: Tests de aislamiento obligatorios
+- **Ejecutar**: `pytest tests/`
+
+## Workflow de Desarrollo
+
+1. **Antes de commitear**: Ejecutar tests y linter
+2. **Antes de push a main**: Verificar que compile localmente
+3. **Después de push**: Monitorear deploy en Railway
+4. **En caso de error**: Revisar logs con Railway MCP
+
+## Notas Importantes
+
+- **NO usar N8N** - Toda la lógica está en código Python
+- **NO exponer credenciales** - Usar variables de entorno
+- **NO queries sin tenant_id** - Multi-tenancy es obligatorio
+- **SIEMPRE usar MCP tools** - No pedir al usuario que ejecute comandos

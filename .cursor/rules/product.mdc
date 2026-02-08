@@ -17,6 +17,24 @@ alwaysApply: true
 - **Conversacional e inteligente** (no menús ni comandos rígidos)
 - **Multi-tenant SaaS** (un número de WhatsApp sirve múltiples hogares)
 
+## Estado Actual
+
+### Fase 2: MVP (ACTUAL)
+- ✅ Bot migrado a código Python (sin N8N)
+- ✅ 5 agentes funcionando (Finance, Calendar, Reminder, Shopping, Vehicle)
+- ✅ Panel de administración para editar prompts
+- ✅ Logging de interacciones
+- ✅ Integración Google Calendar
+- 🔄 Multi-tenant (implementado pero usando tenant fijo)
+- 🔄 Testing y estabilización
+
+### Próxima Fase: Producción
+- [ ] Multi-tenant completo (onboarding self-service)
+- [ ] Recordatorios proactivos (templates WhatsApp aprobados)
+- [ ] Manejo de errores robusto
+- [ ] Rate limiting
+- [ ] Métricas y alertas
+
 ## Usuarios Objetivo
 
 ### Usuario Primario: "El Organizador del Hogar"
@@ -30,96 +48,95 @@ alwaysApply: true
 - Acceso limitado (agregar gastos, ver listas)
 - No necesitan instalar nada nuevo
 
-## Funcionalidades MVP
+## Funcionalidades Implementadas
 
-### 1. Gestión de Presupuesto y Gastos
+### 1. Gestión de Presupuesto y Gastos ✅
 **Problema:** "No sé en qué se me va la plata"
 
-**Funcionalidades:**
-- Definir presupuesto mensual por categorías (supermercado, servicios, transporte, etc.)
-- Registrar gastos via chat: "Gasté $5000 en super"
-- Reportes: total del mes, por categoría, comparativa con presupuesto
-- Alertas cuando una categoría supera el 80% del límite
-
-**Flujo típico:**
+**Flujo:**
 ```
 Usuario: "Gasté 3500 en el super"
 Bot: "✓ Registrado: $3,500 en Supermercado. 
       Llevas $12,500/$20,000 este mes (62%)"
 ```
 
-### 2. Agenda de Eventos
+**Capacidades:**
+- Registrar gastos via chat
+- Reportes por período y categoría
+- Alertas de presupuesto
+
+### 2. Agenda de Eventos ✅
 **Problema:** "Se me olvidan las citas y eventos"
 
-**Funcionalidades:**
-- Crear eventos: "Tengo turno con el dentista el martes a las 10"
-- Ver agenda: "Qué tengo esta semana?"
-- Editar/cancelar eventos existentes
-- Detección de conflictos y duplicados
-
-**Flujo típico:**
+**Flujo:**
 ```
 Usuario: "Agendame reunión de padres el viernes 15 a las 18"
 Bot: "✓ Creado: Reunión de padres
-      📅 Viernes 15/3 a las 18:00
-      ¿Quieres que te recuerde antes?"
+      📅 Viernes 15/3 a las 18:00"
 ```
 
-### 3. Recordatorios
+**Capacidades:**
+- Crear, ver, editar eventos
+- Sincronización con Google Calendar (OAuth individual)
+- Detección de conflictos
+
+### 3. Recordatorios ✅
 **Problema:** "Siempre me olvido de hacer X"
 
-**Funcionalidades:**
-- Recordatorios únicos: "Recordame mañana llamar al banco"
-- Recordatorios recurrentes: "Recordame todos los lunes sacar la basura"
-- Snooze: posponer recordatorios
-- Canales: WhatsApp (MVP), email (futuro)
-
-**Flujo típico:**
+**Flujo:**
 ```
-Usuario: "Recordame el 5 de cada mes pagar el alquiler"
-Bot: "✓ Recordatorio creado: Pagar alquiler
-      🔁 Cada día 5 del mes
-      Te aviso por WhatsApp"
+Usuario: "Recordame mañana llamar al banco"
+Bot: "✓ Recordatorio creado: Llamar al banco
+      📅 Mañana a las 09:00"
 ```
 
-### 4. Listas de Compras
+**Capacidades:**
+- Recordatorios únicos y recurrentes
+- Almacenamiento directo en DB
+- ⚠️ Notificaciones proactivas pendientes (requiere templates aprobados)
+
+### 4. Listas de Compras ✅
 **Problema:** "Siempre me olvido algo en el super"
 
-**Funcionalidades:**
-- Múltiples listas (supermercado, farmacia, ferretería)
-- Agregar items: "Agregá leche y pan a la lista del super"
-- Ver lista actual
+**Flujo:**
+```
+Usuario: "Agregá leche a la lista del super"
+Bot: "✓ Agregado: Leche a Lista Supermercado"
+```
+
+**Capacidades:**
+- Múltiples listas
+- Agregar/quitar items
 - Marcar como comprado
-- Cantidades y notas opcionales
 
-**Flujo típico:**
+### 5. Gestión de Vehículos ✅
+**Problema:** "¿Cuándo le toca el service al auto?"
+
+**Flujo:**
 ```
-Usuario: "Qué tengo en la lista del super?"
-Bot: "🛒 Lista Supermercado (5 items):
-      ☐ Leche (2 litros)
-      ☐ Pan
-      ☐ Huevos
-      ☐ Queso
-      ☐ Manzanas"
+Usuario: "Registrame que le cambié el aceite al auto"
+Bot: "✓ Service registrado: Cambio de aceite
+      🚗 Toyota Corolla (ABC123)
+      📅 08/02/2026 - 45,000 km"
 ```
 
-## Web de Configuración
+**Capacidades:**
+- Registro de vehículos
+- Historial de servicios
+- Recordatorios de mantenimiento
 
-### Propósito
-Interfaz web para configuración que NO se puede hacer via chat:
-- Onboarding inicial (crear cuenta, vincular WhatsApp)
-- Configuración de categorías de presupuesto
-- Gestión de miembros del hogar
-- Ver historial y logs de conversaciones
-- Configuración de integraciones
+## Panel de Administración ✅
 
-### Pantallas Principales
-1. **Login** - Google OAuth
-2. **Dashboard** - Resumen del mes (gastos, eventos, recordatorios pendientes)
-3. **Presupuesto** - Configurar categorías y límites
-4. **Miembros** - Invitar/gestionar usuarios del tenant
-5. **Logs** - Ver conversaciones y decisiones del bot (debugging)
-6. **Configuración** - Timezone, moneda, preferencias
+Interfaz web para gestionar el bot:
+
+| Funcionalidad | Estado |
+|---------------|--------|
+| Ver estadísticas | ✅ |
+| Editar prompts de agentes | ✅ |
+| Ver historial de versiones | ✅ |
+| Ver interacciones | ✅ |
+| Filtrar por agente/usuario/fecha | ✅ |
+| Ver detalle de interacción | ✅ |
 
 ## Principios de Diseño Conversacional
 
@@ -164,8 +181,8 @@ Interfaz web para configuración que NO se puede hacer via chat:
 
 ### WhatsApp Business API
 - Mensajes tienen límite de caracteres (~4096)
-- No se puede iniciar conversación (usuario debe escribir primero dentro de 24h)
-- Templates para mensajes proactivos (recordatorios) requieren aprobación
+- No se puede iniciar conversación (24h rule)
+- Templates para mensajes proactivos requieren aprobación de Meta
 
 ### Inteligencia Artificial
 - El bot puede equivocarse → siempre permitir corregir
@@ -174,22 +191,30 @@ Interfaz web para configuración que NO se puede hacer via chat:
 
 ## Fases del Producto
 
-### Fase 1: POC (Actual)
-- Orquestación en n8n (sin código propio)
-- 4 funcionalidades core via WhatsApp
-- Web básica de configuración
-- Single-tenant para validar
+### ~~Fase 1: POC~~ ✅ COMPLETADA
+- ~~Orquestación en n8n~~
+- ~~4 funcionalidades core via WhatsApp~~
+- ~~Web básica de configuración~~
 
-### Fase 2: MVP
-- Migración a Python (código propio)
-- Multi-tenant completo
-- Onboarding self-service
-- Métricas y analytics básicos
+### Fase 2: MVP (ACTUAL) 🔄
+- ✅ Migración a Python (código propio)
+- ✅ 5 agentes implementados
+- ✅ Panel de administración
+- 🔄 Multi-tenant funcional (usando tenant fijo por ahora)
+- 🔄 Testing y estabilización
 
-### Fase 3: Growth
-- Integraciones (Google Calendar, bancos)
-- Funcionalidades premium
-- Mobile app companion
+### Fase 3: Producción
+- [ ] Multi-tenant completo con onboarding
+- [ ] Recordatorios proactivos
+- [ ] Rate limiting y seguridad
+- [ ] Métricas y alertas
+- [ ] Backup y recovery
+
+### Fase 4: Growth
+- [ ] Integraciones adicionales (bancos, otros calendarios)
+- [ ] Funcionalidades premium
+- [ ] Mobile app companion
+- [ ] Analytics avanzados
 
 ## Métricas de Éxito
 
@@ -221,3 +246,6 @@ Interfaz web para configuración que NO se puede hacer via chat:
 | **Reminder** | Alerta programada (única o recurrente) |
 | **Shopping List** | Lista de compras con items |
 | **Conversation** | Sesión de chat con el bot |
+| **Interaction** | Un intercambio mensaje-respuesta del bot |
+| **Agent** | Módulo especializado del bot (Finance, Calendar, etc.) |
+| **Router** | Agente que decide a qué sub-agente derivar |
