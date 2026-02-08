@@ -207,3 +207,43 @@ class AgentGetBudgetResponse(BaseSchema):
     
     budgets: list[AgentBudgetStatus]
     alerts: list[str]
+
+
+class AgentDeleteExpenseRequest(BaseSchema):
+    """Request from n8n agent to delete an expense."""
+    
+    amount: Decimal | None = Field(None, description="Amount to match")
+    category: str | None = Field(None, description="Category to match")
+    description: str | None = Field(None, description="Description to match (partial)")
+    expense_date: date | None = Field(None, description="Date to match (defaults to today)")
+
+
+class AgentDeleteExpenseResponse(BaseSchema):
+    """Response after deleting expense."""
+    
+    success: bool
+    message: str
+    deleted_expense: dict | None = None
+
+
+class AgentModifyExpenseRequest(BaseSchema):
+    """Request from n8n agent to modify an expense."""
+    
+    # Search criteria
+    search_amount: Decimal | None = Field(None, description="Amount to search for")
+    search_category: str | None = Field(None, description="Category to search for")
+    search_description: str | None = Field(None, description="Description to search for")
+    search_date: date | None = Field(None, description="Date to search for (defaults to today)")
+    
+    # New values
+    new_amount: Decimal | None = Field(None, gt=0, description="New amount")
+    new_category: str | None = Field(None, description="New category")
+    new_description: str | None = Field(None, description="New description")
+
+
+class AgentModifyExpenseResponse(BaseSchema):
+    """Response after modifying expense."""
+    
+    success: bool
+    message: str
+    modified_expense: dict | None = None

@@ -11,12 +11,16 @@ from ..middleware.auth import get_current_user, validate_tenant_access
 from ..repositories import finance as repo
 from ..schemas.auth import CurrentUser
 from ..schemas.finance import (
+    AgentDeleteExpenseRequest,
+    AgentDeleteExpenseResponse,
     AgentGetBudgetRequest,
     AgentGetBudgetResponse,
     AgentGetReportRequest,
     AgentGetReportResponse,
     AgentLogExpenseRequest,
     AgentLogExpenseResponse,
+    AgentModifyExpenseRequest,
+    AgentModifyExpenseResponse,
     BudgetCategoryCreate,
     BudgetCategoryResponse,
     BudgetCategoryUpdate,
@@ -91,6 +95,56 @@ async def agent_get_budget(
         tenant_id=tenant_id,
         category_name=category,
     )
+
+
+@router.delete("/agent/expense", response_model=AgentDeleteExpenseResponse)
+async def agent_delete_expense(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    amount: Decimal | None = Query(None, description="Amount to match"),
+    category: str | None = Query(None, description="Category to match"),
+    description: str | None = Query(None, description="Description to match"),
+    expense_date: date | None = Query(None, description="Date to match"),
+) -> AgentDeleteExpenseResponse:
+    """
+    Delete an expense from the n8n agent.
+    
+    Searches for a matching expense and deletes it.
+    """
+    result = await finance_service.delete_expense_for_agent(
+        tenant_id=tenant_id,
+        amount=amount,
+        category_name=category,
+        description=description,
+        expense_date=expense_date,
+    )
+    return AgentDeleteExpenseResponse(**result)
+
+
+@router.patch("/agent/expense", response_model=AgentModifyExpenseResponse)
+async def agent_modify_expense(
+    tenant_id: UUID,
+    request: AgentModifyExpenseRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+) -> AgentModifyExpenseResponse:
+    """
+    Modify an expense from the n8n agent.
+    
+    Searches for a matching expense and updates it.
+    """
+    result = await finance_service.modify_expense_for_agent(
+        tenant_id=tenant_id,
+        search_amount=request.search_amount,
+        search_category=request.search_category,
+        search_description=request.search_description,
+        search_date=request.search_date,
+        new_amount=request.new_amount,
+        new_category=request.new_category,
+        new_description=request.new_description,
+    )
+    return AgentModifyExpenseResponse(**result)
 
 
 # =============================================================================

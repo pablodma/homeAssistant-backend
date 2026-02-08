@@ -146,6 +146,53 @@ async def delete_expense(tenant_id: UUID, expense_id: UUID) -> bool:
         return result == "DELETE 1"
 
 
+async def search_expense(
+    tenant_id: UUID,
+    amount: Decimal | None = None,
+    category_id: UUID | None = None,
+    description: str | None = None,
+    expense_date: date | None = None,
+) -> dict[str, Any] | None:
+    """Search for an expense matching criteria. Returns most recent match."""
+    pool = await get_pool()
+    
+    query = """
+        SELECT e.id, e.tenant_id, e.amount, e.category_id, e.description, 
+               e.expense_date, e.created_at, bc.name as category_name
+        FROM expenses e
+        LEFT JOIN budget_categories bc ON e.category_id = bc.id
+        WHERE e.tenant_id = $1
+    """
+    params: list[Any] = [tenant_id]
+    param_idx = 2
+    
+    if amount is not None:
+        query += f" AND e.amount = ${param_idx}"
+        params.append(amount)
+        param_idx += 1
+    
+    if category_id is not None:
+        query += f" AND e.category_id = ${param_idx}"
+        params.append(category_id)
+        param_idx += 1
+    
+    if description is not None:
+        query += f" AND LOWER(e.description) LIKE LOWER(${param_idx})"
+        params.append(f"%{description}%")
+        param_idx += 1
+    
+    if expense_date is not None:
+        query += f" AND e.expense_date = ${param_idx}"
+        params.append(expense_date)
+        param_idx += 1
+    
+    query += " ORDER BY e.created_at DESC LIMIT 1"
+    
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(query, *params)
+        return dict(row) if row else None
+
+
 # =============================================================================
 # BUDGET CATEGORIES
 # =============================================================================
