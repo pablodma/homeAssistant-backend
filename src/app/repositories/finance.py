@@ -157,7 +157,7 @@ async def get_budget_categories(tenant_id: UUID) -> list[dict[str, Any]]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT id, tenant_id, name, monthly_limit, alert_threshold, created_at, updated_at
+            SELECT id, tenant_id, name, monthly_limit, alert_threshold_percent as alert_threshold, created_at
             FROM budget_categories
             WHERE tenant_id = $1
             ORDER BY name
@@ -203,9 +203,9 @@ async def create_budget_category(
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            INSERT INTO budget_categories (tenant_id, name, monthly_limit, alert_threshold)
+            INSERT INTO budget_categories (tenant_id, name, monthly_limit, alert_threshold_percent)
             VALUES ($1, $2, $3, $4)
-            RETURNING *
+            RETURNING id, tenant_id, name, monthly_limit, alert_threshold_percent as alert_threshold, created_at
             """,
             tenant_id, name, monthly_limit, alert_threshold
         )
@@ -360,14 +360,14 @@ async def get_monthly_spending_by_category(
                 bc.id as category_id,
                 bc.name,
                 bc.monthly_limit,
-                bc.alert_threshold,
+                bc.alert_threshold_percent as alert_threshold,
                 COALESCE(SUM(e.amount), 0) as current_spending
             FROM budget_categories bc
             LEFT JOIN expenses e ON bc.id = e.category_id 
                 AND EXTRACT(YEAR FROM e.expense_date) = $2
                 AND EXTRACT(MONTH FROM e.expense_date) = $3
             WHERE bc.tenant_id = $1
-            GROUP BY bc.id, bc.name, bc.monthly_limit, bc.alert_threshold
+            GROUP BY bc.id, bc.name, bc.monthly_limit, bc.alert_threshold_percent
             ORDER BY bc.name
             """,
             tenant_id, year, month
