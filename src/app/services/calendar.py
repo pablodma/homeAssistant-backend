@@ -47,9 +47,9 @@ async def create_event(
 ) -> EventWithDuplicateCheck:
     """Create a new event with duplicate detection and optional Google sync."""
     if data.start_time:
-        start_dt = datetime.combine(data.date, data.start_time)
+        start_dt = datetime.combine(data.event_date, data.start_time)
     else:
-        start_dt = datetime.combine(data.date, time(9, 0))
+        start_dt = datetime.combine(data.event_date, time(9, 0))
 
     end_dt = start_dt + timedelta(minutes=data.duration_minutes)
 
@@ -211,9 +211,9 @@ async def update_event(
     new_start_dt = None
     new_end_dt = None
 
-    if data.date or data.start_time:
+    if data.event_date or data.start_time:
         current_start = existing["start_datetime"]
-        new_date = data.date or current_start.date()
+        new_date = data.event_date or current_start.date()
         new_time = data.start_time or current_start.time()
         new_start_dt = datetime.combine(new_date, new_time)
 
@@ -554,7 +554,7 @@ async def agent_create_event(
 
     data = EventCreate(
         title=request.title,
-        date=request.date,
+        event_date=request.event_date,
         start_time=request.start_time,
         duration_minutes=request.duration_minutes,
         location=request.location,
@@ -584,8 +584,8 @@ async def agent_list_events(
 
     return await list_events(
         tenant_id=tenant_id,
-        start_date=request.date or request.start_date,
-        end_date=request.end_date or request.date,
+        start_date=request.event_date or request.start_date,
+        end_date=request.end_date or request.event_date,
         search_query=request.search_query,
         include_google=request.include_google,
         user_id_for_google=user_id_for_google,

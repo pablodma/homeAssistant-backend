@@ -5,7 +5,8 @@ Solo se usa si OPENAI_API_KEY está configurado y se llama explícitamente.
 """
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date as date_type
+from datetime import datetime, timedelta
 from datetime import time as time_type
 
 from ..config.settings import get_settings
@@ -141,7 +142,7 @@ async def detect_event_in_message(
         
         detected_event = DetectedEvent(
             title=event_data.get("title", "Evento"),
-            date=_parse_date(event_data.get("date")),
+            event_date=_parse_date(event_data.get("date")),
             start_time=_parse_time(event_data.get("time")),
             duration_minutes=event_data.get("duration_minutes", 60),
             location=event_data.get("location"),
@@ -155,7 +156,7 @@ async def detect_event_in_message(
         needs_confirmation = (
             confidence < 0.9 or
             len(missing_fields) > 0 or
-            detected_event.date is None or
+            detected_event.event_date is None or
             detected_event.start_time is None
         )
 
@@ -182,7 +183,7 @@ async def detect_event_in_message(
         )
 
 
-def _parse_date(date_str: str | None) -> date | None:
+def _parse_date(date_str: str | None) -> date_type | None:
     """Parse date string to date object."""
     if not date_str:
         return None
@@ -209,8 +210,8 @@ def _build_confirmation_message(
     """Build a user-friendly confirmation message."""
     parts = [f"📅 Detecté un posible evento: \"{event.title}\""]
 
-    if event.date:
-        parts.append(f"📆 Fecha: {_format_date(event.date)}")
+    if event.event_date:
+        parts.append(f"📆 Fecha: {_format_date(event.event_date)}")
     
     if event.start_time:
         parts.append(f"🕐 Hora: {event.start_time.strftime('%H:%M')}")

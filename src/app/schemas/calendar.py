@@ -1,6 +1,7 @@
 """Calendar schemas for events and Google Calendar integration."""
 
-from datetime import date, datetime
+from datetime import date as date_type
+from datetime import datetime
 from datetime import time as time_type
 from enum import Enum
 from typing import Optional
@@ -52,16 +53,16 @@ class EventBase(BaseModel):
 class EventCreate(EventBase):
     """Create event request."""
 
-    date: date = Field(..., description="Event date (YYYY-MM-DD)")
+    event_date: date_type = Field(..., description="Event date (YYYY-MM-DD)")
     start_time: Optional[time_type] = Field(None, description="Event start time (HH:MM)")
     duration_minutes: int = Field(default=60, ge=15, le=1440)
     timezone: str = Field(default="America/Argentina/Buenos_Aires")
     recurrence_rule: Optional[str] = Field(None, description="RRULE for recurring events")
     idempotency_key: Optional[str] = Field(None, max_length=100)
 
-    @field_validator("date")
+    @field_validator("event_date")
     @classmethod
-    def validate_date_not_past(cls, v: date) -> date:
+    def validate_date_not_past(cls, v: date_type) -> date_type:
         """Warn if date is in the past (but allow it)."""
         return v
 
@@ -72,7 +73,7 @@ class EventUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=1000)
     location: Optional[str] = Field(None, max_length=500)
-    date: Optional[date] = None
+    event_date: Optional[date_type] = None
     start_time: Optional[time_type] = None
     duration_minutes: Optional[int] = Field(None, ge=15, le=1440)
 
@@ -109,8 +110,8 @@ class EventListResponse(BaseModel):
 class DateRange(BaseModel):
     """Date range for event queries."""
 
-    start_date: date
-    end_date: date
+    start_date: date_type
+    end_date: date_type
 
 
 # =============================================================================
@@ -160,7 +161,7 @@ class AgentCreateEventRequest(BaseModel):
     """Request schema for agent create_event action."""
 
     title: str = Field(..., min_length=1, max_length=200)
-    date: date
+    event_date: date_type
     start_time: Optional[time_type] = None
     duration_minutes: int = Field(default=60, ge=15, le=1440)
     location: Optional[str] = None
@@ -174,7 +175,7 @@ class AgentUpdateEventRequest(BaseModel):
     search_query: Optional[str] = Field(None, description="Search term to find event")
     event_id: Optional[UUID] = Field(None, description="Direct event ID if known")
     title: Optional[str] = None
-    date: Optional[date] = None
+    event_date: Optional[date_type] = None
     start_time: Optional[time_type] = None
     duration_minutes: Optional[int] = None
     location: Optional[str] = None
@@ -183,25 +184,25 @@ class AgentUpdateEventRequest(BaseModel):
 class AgentDeleteEventRequest(BaseModel):
     """Request schema for agent delete_event action."""
 
-    search_query: str | None = Field(None, description="Search term to find event")
-    event_id: UUID | None = Field(None, description="Direct event ID if known")
-    date: date | None = Field(None, description="Filter by date")
+    search_query: Optional[str] = Field(None, description="Search term to find event")
+    event_id: Optional[UUID] = Field(None, description="Direct event ID if known")
+    event_date: Optional[date_type] = Field(None, description="Filter by date")
 
 
 class AgentListEventsRequest(BaseModel):
     """Request schema for agent list_events action."""
 
-    date: date | None = None
-    start_date: date | None = None
-    end_date: date | None = None
-    search_query: str | None = None
+    event_date: Optional[date_type] = None
+    start_date: Optional[date_type] = None
+    end_date: Optional[date_type] = None
+    search_query: Optional[str] = None
     include_google: bool = Field(default=True, description="Include Google Calendar events")
 
 
 class AgentCheckAvailabilityRequest(BaseModel):
     """Request schema for checking availability."""
 
-    date: date
+    event_date: date_type
     start_time: time_type
     duration_minutes: int = 60
 
@@ -223,7 +224,7 @@ class DetectedEvent(BaseModel):
     """Detected event from natural language."""
 
     title: str
-    date: Optional[date] = None
+    event_date: Optional[date_type] = None
     start_time: Optional[time_type] = None
     duration_minutes: Optional[int] = None
     location: Optional[str] = None
