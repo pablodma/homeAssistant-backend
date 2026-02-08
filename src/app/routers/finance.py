@@ -41,9 +41,12 @@ router = APIRouter(prefix="/tenants/{tenant_id}", tags=["Finance"])
 @router.post("/agent/expense", response_model=AgentLogExpenseResponse)
 async def agent_log_expense(
     tenant_id: UUID,
-    request: AgentLogExpenseRequest,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     _: Annotated[None, Depends(validate_tenant_access)],
+    amount: Decimal = Query(..., description="Expense amount"),
+    category: str = Query(..., description="Category name"),
+    description: str | None = Query(None, description="Optional description"),
+    expense_date: date | None = Query(None, description="Expense date YYYY-MM-DD"),
 ) -> AgentLogExpenseResponse:
     """
     Log an expense from the n8n agent.
@@ -52,10 +55,10 @@ async def agent_log_expense(
     """
     return await finance_service.create_expense_with_alert(
         tenant_id=tenant_id,
-        amount=request.amount,
-        category_name=request.category,
-        description=request.description,
-        expense_date=request.expense_date,
+        amount=amount,
+        category_name=category,
+        description=description,
+        expense_date=expense_date,
     )
 
 
