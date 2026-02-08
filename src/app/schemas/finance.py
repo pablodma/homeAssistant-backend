@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from .common import BaseSchema, TimestampMixin
 
@@ -76,7 +76,7 @@ class BudgetCategoryUpdate(BaseSchema):
     alert_threshold: int | None = Field(None, ge=0, le=100)
 
 
-class BudgetCategoryResponse(BudgetCategoryBase, TimestampMixin):
+class BudgetCategoryResponse(BudgetCategoryBase):
     """Budget category response schema."""
     
     id: UUID
@@ -84,6 +84,8 @@ class BudgetCategoryResponse(BudgetCategoryBase, TimestampMixin):
     current_spending: Decimal = Decimal("0")
     remaining: Decimal | None = None
     percentage_used: float = 0.0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 # =============================================================================

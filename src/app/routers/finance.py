@@ -60,7 +60,7 @@ async def agent_get_report(
     tenant_id: UUID,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     _: Annotated[None, Depends(validate_tenant_access)],
-    period: str = Query("month", regex="^(day|week|month|year)$"),
+    period: str = Query("month", pattern="^(day|week|month|year)$"),
     category: str | None = Query(None),
 ) -> AgentGetReportResponse:
     """
