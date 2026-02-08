@@ -119,7 +119,6 @@ async def update_expense(
     if not set_parts:
         return await get_expense_by_id(tenant_id, expense_id)
     
-    set_parts.append("updated_at = NOW()")
     params.extend([expense_id, tenant_id])
     
     query = f"""
