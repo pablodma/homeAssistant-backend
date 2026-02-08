@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Path, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
@@ -11,6 +11,17 @@ from ..config import get_settings
 from ..schemas.auth import CurrentUser
 
 security = HTTPBearer()
+
+
+def _parse_user_id(user_id_str: str) -> UUID:
+    """Parse user ID, handling service tokens."""
+    # Service tokens have IDs like "service-n8n"
+    if user_id_str.startswith("service-"):
+        # Generate a deterministic UUID for service accounts
+        import hashlib
+        hash_bytes = hashlib.md5(user_id_str.encode()).digest()
+        return UUID(bytes=hash_bytes)
+    return UUID(user_id_str)
 
 
 async def get_current_user(
@@ -38,7 +49,7 @@ async def get_current_user(
             raise credentials_exception
 
         return CurrentUser(
-            id=UUID(user_id),
+            id=_parse_user_id(user_id),
             tenant_id=UUID(tenant_id),
             email=payload.get("email"),
             role=payload.get("role", "member"),
@@ -71,9 +82,21 @@ async def require_owner(
     return current_user
 
 
-def validate_tenant_access(user_tenant_id: UUID, requested_tenant_id: UUID) -> None:
+async def validate_tenant_access(
+    tenant_id: Annotated[UUID, Path(description="Tenant ID")],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> None:
     """Validate user has access to the requested tenant."""
-    if user_tenant_id != requested_tenant_id:
+    # System role (service tokens) can access any tenant they're issued for
+    if current_user.role == "system":
+        if current_user.tenant_id != tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Service token not authorized for this tenant",
+            )
+        return
+    
+    if current_user.tenant_id != tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied to this tenant",
