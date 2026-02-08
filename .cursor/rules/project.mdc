@@ -90,3 +90,17 @@ Railway_HomeAs-list-deployments(workspacePath="d:\\Proyectos\\homeAsiss\\homeai-
 ```
 
 **IMPORTANTE**: No asumas el estado del servicio. SIEMPRE consulta Railway para obtener información real.
+
+## Testing de Endpoints (OBLIGATORIO)
+
+**NUNCA pidas al usuario que ejecute curl o pruebe endpoints manualmente. SIEMPRE ejecuta los comandos directamente:**
+
+- Usa la herramienta Shell para ejecutar `curl` o `Invoke-RestMethod` directamente
+- Verifica respuestas de la API sin intervención del usuario
+- Si necesitas probar un endpoint, hazlo tú mismo
+
+### Ejemplo:
+```powershell
+# En lugar de decir "ejecuta este curl", ejecutarlo directamente:
+curl -X GET "https://api.example.com/endpoint" -H "Authorization: Bearer $token"
+```
