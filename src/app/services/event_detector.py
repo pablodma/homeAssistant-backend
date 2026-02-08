@@ -234,9 +234,9 @@ def _build_confirmation_message(
     return "\n".join(parts)
 
 
-def _format_date(d: date) -> str:
+def _format_date(d: date_type) -> str:
     """Format date in Spanish."""
-    today = date.today()
+    today = date_type.today()
     
     if d == today:
         return "Hoy"
