@@ -46,8 +46,8 @@ async def create_event(
     user_id_for_sync: UUID | None = None,
 ) -> EventWithDuplicateCheck:
     """Create a new event with duplicate detection and optional Google sync."""
-    if data.time:
-        start_dt = datetime.combine(data.date, data.time)
+    if data.start_time:
+        start_dt = datetime.combine(data.date, data.start_time)
     else:
         start_dt = datetime.combine(data.date, time(9, 0))
 
@@ -211,10 +211,10 @@ async def update_event(
     new_start_dt = None
     new_end_dt = None
 
-    if data.date or data.time:
+    if data.date or data.start_time:
         current_start = existing["start_datetime"]
         new_date = data.date or current_start.date()
-        new_time = data.time or current_start.time()
+        new_time = data.start_time or current_start.time()
         new_start_dt = datetime.combine(new_date, new_time)
 
         duration = data.duration_minutes or (
@@ -555,7 +555,7 @@ async def agent_create_event(
     data = EventCreate(
         title=request.title,
         date=request.date,
-        time=request.time,
+        start_time=request.start_time,
         duration_minutes=request.duration_minutes,
         location=request.location,
         description=request.description,

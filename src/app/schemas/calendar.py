@@ -1,7 +1,9 @@
 """Calendar schemas for events and Google Calendar integration."""
 
-from datetime import date, datetime, time
+from datetime import date, datetime
+from datetime import time as time_type
 from enum import Enum
+from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -51,11 +53,11 @@ class EventCreate(EventBase):
     """Create event request."""
 
     date: date = Field(..., description="Event date (YYYY-MM-DD)")
-    time: time | None = Field(None, description="Event start time (HH:MM)")
+    start_time: Optional[time_type] = Field(None, description="Event start time (HH:MM)")
     duration_minutes: int = Field(default=60, ge=15, le=1440)
     timezone: str = Field(default="America/Argentina/Buenos_Aires")
-    recurrence_rule: str | None = Field(None, description="RRULE for recurring events")
-    idempotency_key: str | None = Field(None, max_length=100)
+    recurrence_rule: Optional[str] = Field(None, description="RRULE for recurring events")
+    idempotency_key: Optional[str] = Field(None, max_length=100)
 
     @field_validator("date")
     @classmethod
@@ -67,12 +69,12 @@ class EventCreate(EventBase):
 class EventUpdate(BaseModel):
     """Update event request."""
 
-    title: str | None = Field(None, min_length=1, max_length=200)
-    description: str | None = Field(None, max_length=1000)
-    location: str | None = Field(None, max_length=500)
-    date: date | None = None
-    time: time | None = None
-    duration_minutes: int | None = Field(None, ge=15, le=1440)
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = Field(None, max_length=1000)
+    location: Optional[str] = Field(None, max_length=500)
+    date: Optional[date] = None
+    start_time: Optional[time_type] = None
+    duration_minutes: Optional[int] = Field(None, ge=15, le=1440)
 
 
 class EventResponse(BaseSchema):
@@ -159,23 +161,23 @@ class AgentCreateEventRequest(BaseModel):
 
     title: str = Field(..., min_length=1, max_length=200)
     date: date
-    time: time | None = None
+    start_time: Optional[time_type] = None
     duration_minutes: int = Field(default=60, ge=15, le=1440)
-    location: str | None = None
-    description: str | None = None
-    user_phone: str | None = Field(None, description="Phone to identify user for Google sync")
+    location: Optional[str] = None
+    description: Optional[str] = None
+    user_phone: Optional[str] = Field(None, description="Phone to identify user for Google sync")
 
 
 class AgentUpdateEventRequest(BaseModel):
     """Request schema for agent update_event action."""
 
-    search_query: str | None = Field(None, description="Search term to find event")
-    event_id: UUID | None = Field(None, description="Direct event ID if known")
-    title: str | None = None
-    date: date | None = None
-    time: time | None = None
-    duration_minutes: int | None = None
-    location: str | None = None
+    search_query: Optional[str] = Field(None, description="Search term to find event")
+    event_id: Optional[UUID] = Field(None, description="Direct event ID if known")
+    title: Optional[str] = None
+    date: Optional[date] = None
+    start_time: Optional[time_type] = None
+    duration_minutes: Optional[int] = None
+    location: Optional[str] = None
 
 
 class AgentDeleteEventRequest(BaseModel):
@@ -200,7 +202,7 @@ class AgentCheckAvailabilityRequest(BaseModel):
     """Request schema for checking availability."""
 
     date: date
-    time: time
+    start_time: time_type
     duration_minutes: int = 60
 
 
@@ -209,7 +211,7 @@ class AgentAvailabilityResponse(BaseModel):
 
     available: bool
     conflicts: list[EventResponse] = []
-    suggested_times: list[time] = []
+    suggested_times: list[time_type] = []
 
 
 # =============================================================================
@@ -221,12 +223,12 @@ class DetectedEvent(BaseModel):
     """Detected event from natural language."""
 
     title: str
-    date: date | None = None
-    time: time | None = None
-    duration_minutes: int | None = None
-    location: str | None = None
+    date: Optional[date] = None
+    start_time: Optional[time_type] = None
+    duration_minutes: Optional[int] = None
+    location: Optional[str] = None
     is_recurring: bool = False
-    recurrence_pattern: str | None = None
+    recurrence_pattern: Optional[str] = None
 
 
 class AgentDetectEventRequest(BaseModel):

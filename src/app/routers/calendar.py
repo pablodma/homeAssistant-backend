@@ -228,7 +228,7 @@ async def agent_update_event(
     update_data = EventUpdate(
         title=request.title,
         date=request.date,
-        time=request.time,
+        start_time=request.start_time,
         duration_minutes=request.duration_minutes,
         location=request.location,
     )

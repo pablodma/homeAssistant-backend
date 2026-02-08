@@ -5,7 +5,8 @@ Solo se usa si OPENAI_API_KEY está configurado y se llama explícitamente.
 """
 
 import json
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
+from datetime import time as time_type
 
 from ..config.settings import get_settings
 from ..schemas.calendar import AgentDetectEventResponse, DetectedEvent
@@ -141,7 +142,7 @@ async def detect_event_in_message(
         detected_event = DetectedEvent(
             title=event_data.get("title", "Evento"),
             date=_parse_date(event_data.get("date")),
-            time=_parse_time(event_data.get("time")),
+            start_time=_parse_time(event_data.get("time")),
             duration_minutes=event_data.get("duration_minutes", 60),
             location=event_data.get("location"),
             is_recurring=event_data.get("is_recurring", False),
@@ -155,7 +156,7 @@ async def detect_event_in_message(
             confidence < 0.9 or
             len(missing_fields) > 0 or
             detected_event.date is None or
-            detected_event.time is None
+            detected_event.start_time is None
         )
 
         if needs_confirmation:
@@ -191,7 +192,7 @@ def _parse_date(date_str: str | None) -> date | None:
         return None
 
 
-def _parse_time(time_str: str | None) -> time | None:
+def _parse_time(time_str: str | None) -> time_type | None:
     """Parse time string to time object."""
     if not time_str:
         return None
@@ -211,8 +212,8 @@ def _build_confirmation_message(
     if event.date:
         parts.append(f"📆 Fecha: {_format_date(event.date)}")
     
-    if event.time:
-        parts.append(f"🕐 Hora: {event.time.strftime('%H:%M')}")
+    if event.start_time:
+        parts.append(f"🕐 Hora: {event.start_time.strftime('%H:%M')}")
 
     if event.location:
         parts.append(f"📍 Ubicación: {event.location}")
