@@ -109,7 +109,7 @@ async def agent_set_budget(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     _: Annotated[None, Depends(validate_tenant_access)],
     category: str = Query(..., description="Category name"),
-    monthly_limit: Decimal = Query(..., gt=0, description="Monthly budget limit"),
+    monthly_limit: Decimal = Query(..., ge=0, description="Monthly budget limit (0 = no limit)"),
     alert_threshold: int = Query(80, ge=0, le=100, description="Alert threshold percentage"),
 ) -> AgentSetBudgetResponse:
     """

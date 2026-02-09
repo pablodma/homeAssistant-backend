@@ -264,7 +264,7 @@ class AgentSetBudgetRequest(BaseSchema):
     """Request from n8n agent to set a budget."""
     
     category: str = Field(..., description="Category name")
-    monthly_limit: Decimal = Field(..., gt=0, description="Monthly budget limit")
+    monthly_limit: Decimal = Field(..., ge=0, description="Monthly budget limit (0 = no limit)")
     alert_threshold: int = Field(default=80, ge=0, le=100, description="Alert threshold percentage")
 
 
