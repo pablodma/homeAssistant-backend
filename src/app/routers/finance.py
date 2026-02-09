@@ -21,6 +21,8 @@ from ..schemas.finance import (
     AgentLogExpenseResponse,
     AgentModifyExpenseRequest,
     AgentModifyExpenseResponse,
+    AgentSetBudgetRequest,
+    AgentSetBudgetResponse,
     BudgetCategoryCreate,
     BudgetCategoryResponse,
     BudgetCategoryUpdate,
@@ -98,6 +100,30 @@ async def agent_get_budget(
         tenant_id=tenant_id,
         category_name=category,
     )
+
+
+@router.put("/agent/budget", response_model=AgentSetBudgetResponse)
+async def agent_set_budget(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    category: str = Query(..., description="Category name"),
+    monthly_limit: Decimal = Query(..., gt=0, description="Monthly budget limit"),
+    alert_threshold: int = Query(80, ge=0, le=100, description="Alert threshold percentage"),
+) -> AgentSetBudgetResponse:
+    """
+    Set or update a budget for a category from the n8n agent.
+    
+    If the category exists, updates the monthly limit.
+    If the category doesn't exist, creates it with the specified limit.
+    """
+    result = await finance_service.set_budget_for_agent(
+        tenant_id=tenant_id,
+        category_name=category,
+        monthly_limit=monthly_limit,
+        alert_threshold=alert_threshold,
+    )
+    return AgentSetBudgetResponse(**result)
 
 
 @router.delete("/agent/expense", response_model=AgentDeleteExpenseResponse)

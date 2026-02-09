@@ -478,6 +478,62 @@ async def modify_expense_for_agent(
     ).model_dump()
 
 
+async def set_budget_for_agent(
+    tenant_id: UUID,
+    category_name: str,
+    monthly_limit: Decimal,
+    alert_threshold: int = 80,
+) -> dict:
+    """Set or update a budget for a category.
+    
+    If the category exists, updates the monthly limit.
+    If the category doesn't exist, creates it with the specified limit.
+    """
+    # Check if category exists
+    category = await repo.get_budget_category_by_name(tenant_id, category_name)
+    
+    if category:
+        # Update existing category
+        updated = await repo.update_budget_category(
+            tenant_id=tenant_id,
+            category_id=category["id"],
+            monthly_limit=monthly_limit,
+            alert_threshold_percent=alert_threshold,
+        )
+        
+        return {
+            "success": True,
+            "message": f"💰 Presupuesto de {category_name} actualizado a ${monthly_limit:,.0f}/mes",
+            "budget": {
+                "id": str(updated["id"]) if updated else None,
+                "category": category_name,
+                "monthly_limit": float(monthly_limit),
+                "alert_threshold": alert_threshold,
+            },
+            "created": False,
+        }
+    else:
+        # Create new category with limit
+        new_category = await repo.create_budget_category(
+            tenant_id=tenant_id,
+            name=category_name.title(),
+            monthly_limit=monthly_limit,
+            alert_threshold=alert_threshold,
+        )
+        
+        return {
+            "success": True,
+            "message": f"💰 Presupuesto creado: {category_name.title()} con ${monthly_limit:,.0f}/mes",
+            "budget": {
+                "id": str(new_category["id"]),
+                "category": new_category["name"],
+                "monthly_limit": float(monthly_limit),
+                "alert_threshold": alert_threshold,
+            },
+            "created": True,
+        }
+
+
 async def delete_expenses_bulk_for_agent(
     tenant_id: UUID,
     period: str | None = None,

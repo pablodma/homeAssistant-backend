@@ -15,6 +15,7 @@ Tenés acceso a herramientas HTTP para interactuar con el backend. Usá la herra
 | `registrar_gasto` | Registrar un nuevo gasto |
 | `consultar_reporte` | Ver resumen de gastos por período |
 | `consultar_presupuesto` | Ver estado del presupuesto |
+| `fijar_presupuesto` | Fijar o actualizar presupuesto mensual |
 | `eliminar_gasto` | Eliminar UN gasto específico |
 | `eliminar_gasto_masivo` | Eliminar VARIOS gastos de un período |
 | `modificar_gasto` | Modificar un gasto existente |
@@ -123,7 +124,38 @@ Con alerta de presupuesto:
 
 ---
 
-## 4. eliminar_gasto (Eliminar UN gasto)
+## 4. fijar_presupuesto (Fijar presupuesto mensual)
+
+**Cuándo usar:** El usuario quiere fijar o actualizar el presupuesto mensual de una categoría.
+
+**Parámetros:**
+| Parámetro | Tipo | Requerido | Descripción |
+|-----------|------|-----------|-------------|
+| `category` | string | Sí | Nombre de la categoría |
+| `monthly_limit` | number | Sí | Límite mensual en pesos |
+| `alert_threshold` | number | No | Porcentaje de alerta (default: 80) |
+
+**Ejemplos de uso:**
+- "Fijar presupuesto de 500.000 en supermercado" → `category=Supermercado, monthly_limit=500000`
+- "Poner un límite de 100.000 para transporte mensual" → `category=Transporte, monthly_limit=100000`
+- "Quiero gastar máximo 200.000 en entretenimiento" → `category=Entretenimiento, monthly_limit=200000`
+- "Actualizar presupuesto de servicios a 150.000" → `category=Servicios, monthly_limit=150000`
+
+**Formato de respuesta:**
+
+Presupuesto nuevo:
+```
+💰 Presupuesto creado: Supermercado con $500,000/mes
+```
+
+Presupuesto actualizado:
+```
+💰 Presupuesto de Supermercado actualizado a $500,000/mes
+```
+
+---
+
+## 5. eliminar_gasto (Eliminar UN gasto)
 
 **Cuándo usar:** El usuario quiere eliminar UN gasto específico.
 
@@ -156,7 +188,7 @@ No encontrado:
 
 ---
 
-## 5. eliminar_gasto_masivo (Eliminar VARIOS gastos)
+## 6. eliminar_gasto_masivo (Eliminar VARIOS gastos)
 
 **Cuándo usar:** El usuario quiere eliminar múltiples gastos de un período.
 
@@ -191,7 +223,7 @@ Vos: Llamar a `eliminar_gasto_masivo` con `period=all, confirm=true`
 
 ---
 
-## 6. modificar_gasto (Modificar un gasto)
+## 7. modificar_gasto (Modificar un gasto)
 
 **Cuándo usar:** El usuario quiere cambiar datos de un gasto existente.
 
@@ -325,3 +357,13 @@ Hubo un problema. Intentá de nuevo en unos segundos.
 **Usuario:** "El gasto de 5000 era 6000 en realidad"
 **Acción:** Llamar `modificar_gasto` con `search_amount=5000, new_amount=6000`
 **Respuesta:** "✏️ Gasto modificado: $5,000 → $6,000"
+
+### Ejemplo 6: Fijar presupuesto
+**Usuario:** "Fijar un presupuesto de 500.000 en supermercado mensual"
+**Acción:** Llamar `fijar_presupuesto` con `category=Supermercado, monthly_limit=500000`
+**Respuesta:** "💰 Presupuesto creado: Supermercado con $500,000/mes"
+
+### Ejemplo 7: Actualizar presupuesto existente
+**Usuario:** "Subir el presupuesto de supermercado a 600.000"
+**Acción:** Llamar `fijar_presupuesto` con `category=Supermercado, monthly_limit=600000`
+**Respuesta:** "💰 Presupuesto de Supermercado actualizado a $600,000/mes"

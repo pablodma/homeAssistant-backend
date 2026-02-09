@@ -247,3 +247,20 @@ class AgentModifyExpenseResponse(BaseSchema):
     success: bool
     message: str
     modified_expense: dict | None = None
+
+
+class AgentSetBudgetRequest(BaseSchema):
+    """Request from n8n agent to set a budget."""
+    
+    category: str = Field(..., description="Category name")
+    monthly_limit: Decimal = Field(..., gt=0, description="Monthly budget limit")
+    alert_threshold: int = Field(default=80, ge=0, le=100, description="Alert threshold percentage")
+
+
+class AgentSetBudgetResponse(BaseSchema):
+    """Response after setting a budget."""
+    
+    success: bool
+    message: str
+    budget: dict | None = None
+    created: bool = False  # True if category was created, False if updated
