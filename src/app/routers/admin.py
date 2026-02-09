@@ -90,14 +90,21 @@ async def update_agent_prompt(
 ) -> AgentPromptResponse:
     """Update the prompt for an agent.
 
-    Creates a new version of the prompt. Previous versions are kept
-    for history tracking but marked as inactive.
+    DEPRECATED: Los prompts ahora viven en archivos de configuración.
+    Para modificar un prompt:
+    1. Editar docs/prompts/{agent}-agent.md
+    2. Commit + push
+    3. Railway redeploya automáticamente
+    
+    Este endpoint se mantiene por compatibilidad pero no tiene efecto.
     """
-    return await service.update_prompt(
-        tenant_id=str(tenant_id),
-        agent_name=agent_name,
-        prompt_content=body.prompt_content,
-        created_by=user.email,
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "error": "Los prompts son de solo lectura",
+            "message": "Para modificar un prompt, editá docs/prompts/{agent}-agent.md y pusheá a git",
+            "docs": "https://github.com/pablodma/homeAssistant-asistant/tree/main/docs/prompts",
+        },
     )
 
 
