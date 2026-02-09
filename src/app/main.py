@@ -51,10 +51,6 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     
-    # #region agent log
-    print(f"[CORS_DEBUG] Configured CORS origins: {settings.cors_origins}")
-    # #endregion
-    
     # Middleware
     app.add_middleware(CorrelationIdMiddleware)
     app.add_middleware(
