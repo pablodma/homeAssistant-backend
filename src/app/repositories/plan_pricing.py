@@ -130,7 +130,8 @@ async def update_plan_pricing(
 
     if features is not None:
         fields.append(f"features = ${idx}")
-        values.append(features)
+        # Serialize list to JSON string for JSONB column
+        values.append(json.dumps(features))
         idx += 1
 
     values.append(plan_type)

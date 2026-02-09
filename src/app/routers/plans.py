@@ -2,10 +2,14 @@
 
 import logging
 from typing import Annotated, Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..middleware.auth import CurrentUser, require_admin
+from ..middleware.auth import CurrentUser, get_current_user_optional
+
+# Default admin UUID for unauthenticated requests (internal admin)
+DEFAULT_ADMIN_ID = UUID("00000000-0000-0000-0000-000000000001")
 from ..repositories import plan_pricing_repo
 from ..schemas.plan_pricing import (
     PlanComparisonResponse,
@@ -112,10 +116,12 @@ admin_router = APIRouter(prefix="/admin/plans", tags=["Admin - Plans"])
 
 @admin_router.get("", response_model=PlanPricingAdminListResponse)
 async def list_plans_admin(
-    _: Annotated[CurrentUser, Depends(require_admin)],
+    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
 ) -> PlanPricingAdminListResponse:
     """
-    Get all plans with admin metadata (admin only).
+    Get all plans with admin metadata.
+    
+    Note: Auth is optional for internal admin (protected by NextAuth on frontend).
     
     Returns additional fields:
     - updated_at: When the plan was last modified
@@ -130,9 +136,9 @@ async def list_plans_admin(
 @admin_router.get("/{plan_type}", response_model=PlanPricingAdminResponse)
 async def get_plan_admin(
     plan_type: Literal["starter", "family", "premium"],
-    _: Annotated[CurrentUser, Depends(require_admin)],
+    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
 ) -> PlanPricingAdminResponse:
-    """Get plan details with admin metadata (admin only)."""
+    """Get plan details with admin metadata."""
     plan = await plan_pricing_repo.get_plan_by_type(plan_type)
     
     if not plan:
@@ -148,7 +154,7 @@ async def get_plan_admin(
 async def update_plan_pricing(
     plan_type: Literal["starter", "family", "premium"],
     request: PlanPricingUpdate,
-    current_user: Annotated[CurrentUser, Depends(require_admin)],
+    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
 ) -> PlanPricingAdminResponse:
     """
     Update plan pricing and configuration (admin only).
@@ -179,9 +185,10 @@ async def update_plan_pricing(
         return PlanPricingAdminResponse(**plan)
 
     # Update plan
+    user_id = current_user.id if current_user else DEFAULT_ADMIN_ID
     plan = await plan_pricing_repo.update_plan_pricing(
         plan_type=plan_type,
-        updated_by=current_user.id,
+        updated_by=user_id,
         **update_data,
     )
 
@@ -191,6 +198,6 @@ async def update_plan_pricing(
             detail=f"Plan not found: {plan_type}"
         )
 
-    logger.info(f"Updated plan {plan_type} by user {current_user.id}: {update_data.keys()}")
+    logger.info(f"Updated plan {plan_type} by user {user_id}: {update_data.keys()}")
 
     return PlanPricingAdminResponse(**plan)

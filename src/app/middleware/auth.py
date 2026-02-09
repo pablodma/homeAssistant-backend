@@ -83,6 +83,45 @@ async def require_owner(
     return current_user
 
 
+security_optional = HTTPBearer(auto_error=False)
+
+
+async def get_current_user_optional(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security_optional)],
+) -> CurrentUser | None:
+    """
+    Extract user from JWT token if present, return None otherwise.
+    
+    Use this for endpoints that work with or without authentication,
+    such as internal admin endpoints protected by other layers (NextAuth).
+    """
+    if credentials is None:
+        return None
+    
+    settings = get_settings()
+    try:
+        payload = jwt.decode(
+            credentials.credentials,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+        )
+        user_id: str | None = payload.get("sub")
+        tenant_id: str | None = payload.get("tenant_id")
+
+        if user_id is None or tenant_id is None:
+            return None
+
+        return CurrentUser(
+            id=_parse_user_id(user_id),
+            tenant_id=UUID(tenant_id),
+            email=payload.get("email"),
+            role=payload.get("role", "member"),
+            onboarding_completed=payload.get("onboarding_completed", True),
+        )
+    except JWTError:
+        return None
+
+
 async def validate_tenant_access(
     tenant_id: Annotated[UUID, Path(description="Tenant ID")],
     current_user: Annotated[CurrentUser, Depends(get_current_user)],

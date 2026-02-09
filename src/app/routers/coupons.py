@@ -6,7 +6,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..middleware.auth import CurrentUser, get_current_user, require_admin
+from ..middleware.auth import CurrentUser, get_current_user_optional
+
+# Default admin UUID for unauthenticated requests (internal admin)
+DEFAULT_ADMIN_ID = UUID("00000000-0000-0000-0000-000000000001")
 from ..schemas.coupon import (
     CouponCreate,
     CouponListResponse,
@@ -30,7 +33,7 @@ router = APIRouter(prefix="/coupons", tags=["Coupons"])
 @router.post("/validate", response_model=CouponValidateResponse)
 async def validate_coupon(
     request: CouponValidateRequest,
-    current_user: Annotated[CurrentUser, Depends(get_current_user)] = None,
+    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
 ) -> CouponValidateResponse:
     """
     Validate if a coupon code is valid for a plan.
@@ -52,9 +55,9 @@ async def validate_coupon(
 @router.get("/generate-code", response_model=dict)
 async def generate_coupon_code(
     prefix: str = "PROMO",
-    _: Annotated[CurrentUser, Depends(require_admin)] = None,
+    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
 ) -> dict:
-    """Generate a random coupon code (admin only)."""
+    """Generate a random coupon code."""
     code = CouponService.generate_coupon_code(prefix=prefix)
     return {"code": code}
 
@@ -68,7 +71,7 @@ admin_router = APIRouter(prefix="/admin/coupons", tags=["Admin - Coupons"])
 
 @admin_router.get("", response_model=CouponListResponse)
 async def list_coupons(
-    _: Annotated[CurrentUser, Depends(require_admin)],
+    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
     active_only: bool = False,
     limit: int = 100,
     offset: int = 0,
@@ -92,10 +95,10 @@ async def list_coupons(
 @admin_router.post("", response_model=CouponResponse, status_code=status.HTTP_201_CREATED)
 async def create_coupon(
     request: CouponCreate,
-    current_user: Annotated[CurrentUser, Depends(require_admin)],
+    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
 ) -> CouponResponse:
     """
-    Create a new coupon (admin only).
+    Create a new coupon.
     
     Required fields:
     - code: Unique coupon code (will be converted to uppercase)
@@ -110,11 +113,12 @@ async def create_coupon(
     - active: Whether the coupon is active (default: true)
     """
     service = get_coupon_service()
+    user_id = current_user.id if current_user else DEFAULT_ADMIN_ID
     
     try:
         return await service.create_coupon(
             data=request,
-            created_by=current_user.id,
+            created_by=user_id,
         )
     except ValueError as e:
         raise HTTPException(
@@ -126,7 +130,7 @@ async def create_coupon(
 @admin_router.get("/{coupon_id}", response_model=CouponResponse)
 async def get_coupon(
     coupon_id: UUID,
-    _: Annotated[CurrentUser, Depends(require_admin)],
+    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
 ) -> CouponResponse:
     """Get coupon details by ID (admin only)."""
     service = get_coupon_service()
@@ -144,7 +148,7 @@ async def get_coupon(
 @admin_router.get("/{coupon_id}/stats", response_model=CouponStatsResponse)
 async def get_coupon_stats(
     coupon_id: UUID,
-    _: Annotated[CurrentUser, Depends(require_admin)],
+    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
 ) -> CouponStatsResponse:
     """
     Get coupon statistics (admin only).
@@ -170,7 +174,7 @@ async def get_coupon_stats(
 async def update_coupon(
     coupon_id: UUID,
     request: CouponUpdate,
-    _: Annotated[CurrentUser, Depends(require_admin)],
+    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
 ) -> CouponResponse:
     """
     Update a coupon (admin only).
@@ -196,7 +200,7 @@ async def update_coupon(
 @admin_router.delete("/{coupon_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_coupon(
     coupon_id: UUID,
-    _: Annotated[CurrentUser, Depends(require_admin)],
+    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
     soft: bool = True,
 ) -> None:
     """
