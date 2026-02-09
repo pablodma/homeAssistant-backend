@@ -60,3 +60,4 @@ class CurrentUser(BaseModel):
     tenant_id: UUID
     email: str | None
     role: str
+    onboarding_completed: bool = True

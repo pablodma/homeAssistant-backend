@@ -26,13 +26,19 @@ globs:
 │  └──────────┘     └──────┬───────┘     └────────┬─────────┘    │
 │                          │                       │               │
 │                          │    ┌─────────────────┐│               │
-│                          └───▶│ PostgreSQL      │◀               │
-│                               │ (Railway)       │                │
-│  ┌──────────┐                 └─────────────────┘               │
-│  │ Browser  │────▶┌──────────────┐                              │
-│  └──────────┘     │ homeai-web   │──────────────────────────────┘
-│                   │ (Vercel)     │
-│                   └──────────────┘
+│                          └───▶│ PostgreSQL      │◀───────┐      │
+│                               │ (Railway)       │        │      │
+│  ┌──────────┐                 └─────────────────┘        │      │
+│  │ Browser  │────▶┌──────────────┐                       │      │
+│  └──────────┘     │ homeai-web   │───────────────────────┤      │
+│                   │ (Vercel)     │                       │      │
+│                   └──────────────┘                       │      │
+│                                                          │      │
+│  ┌──────────┐                                            │      │
+│  │  Admin   │────▶┌──────────────┐                       │      │
+│  └──────────┘     │ homeai-admin │───────────────────────┘      │
+│                   │ (Vercel)     │                              │
+│                   └──────────────┘                              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,17 +49,20 @@ Estructura local:
 d:\Proyectos\homeAsiss\           ← Carpeta contenedora (NO es repo)
 ├── homeai-api/                   ← ESTE PROYECTO (Backend → Railway)
 ├── homeai-web/                   ← Frontend Next.js → Vercel
-├── homeai-assis/                 ← Bot WhatsApp (→ Railway)
+├── homeai-admin/                 ← Panel Admin Next.js → Vercel
+├── homeai-assis/                 ← Bot WhatsApp → Railway
 └── .credentials/                 ← Credenciales (NO commitear)
 
 Repositorios GitHub:
 ├── homeAssistant-backend         ← ESTE REPO
 ├── homeAssistant-frontend        
+├── homeAssistant-admin           ← Panel de administración
 └── homeAssistant-asistant        
 
 URLs de Deploy:
 ├── Backend:  https://homeassistant-backend-production.up.railway.app
 ├── Frontend: https://homeassistant-frontend.vercel.app
+├── Admin:    https://homeai-admin.vercel.app
 └── Bot:      https://homeai-assis-production.up.railway.app
 ```
 
@@ -72,6 +81,7 @@ URLs de Deploy:
 | Origen | Destino | Método | Propósito |
 |--------|---------|--------|-----------|
 | Frontend → Backend | REST | CRUD operaciones, auth |
+| Admin → Backend | REST | Admin API (agentes, interacciones, stats) |
 | Bot → Backend | REST | Finance API, Calendar API |
 | Bot → DB | asyncpg | Reminders, Shopping, Vehicles, Logs |
 | Backend → Google | OAuth2 | Calendar sync |

@@ -53,6 +53,7 @@ async def get_current_user(
             tenant_id=UUID(tenant_id),
             email=payload.get("email"),
             role=payload.get("role", "member"),
+            onboarding_completed=payload.get("onboarding_completed", True),
         )
     except JWTError:
         raise credentials_exception

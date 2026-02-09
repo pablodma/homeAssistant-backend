@@ -15,8 +15,7 @@ from ..schemas.auth import (
 from ..services.auth import (
     create_access_token,
     verify_google_id_token,
-    find_or_create_user,
-    get_default_tenant,
+    find_or_create_oauth_user,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -43,8 +42,8 @@ async def google_token_auth(request: GoogleIdTokenRequest) -> AuthResponse:
     already has a Google ID token from NextAuth or similar.
     
     1. Validates Google ID token
-    2. Finds or creates user in database
-    3. Returns backend JWT token
+    2. Finds or creates user in database (with new tenant if new user)
+    3. Returns backend JWT token with onboarding status
     """
     # Verify Google ID token
     google_user = await verify_google_id_token(request.id_token)
@@ -61,30 +60,28 @@ async def google_token_auth(request: GoogleIdTokenRequest) -> AuthResponse:
             detail="Email not verified with Google",
         )
     
-    # Get default tenant (MVP: single tenant)
-    tenant_id = await get_default_tenant()
+    # Find or create user (creates new tenant for new users)
+    auth_result = await find_or_create_oauth_user(google_user)
     
-    # Find or create user
-    user_id, role = await find_or_create_user(google_user, tenant_id)
-    
-    # Create JWT token
+    # Create JWT token with onboarding status
     access_token = create_access_token(
-        user_id=user_id,
-        tenant_id=tenant_id,
-        role=role,
+        user_id=auth_result.user_id,
+        tenant_id=auth_result.tenant_id,
+        role=auth_result.role,
         email=google_user["email"],
+        onboarding_completed=auth_result.onboarding_completed,
     )
     
     return AuthResponse(
         access_token=access_token,
         token_type="bearer",
         user=UserResponse(
-            id=user_id,
-            tenant_id=tenant_id,
+            id=auth_result.user_id,
+            tenant_id=auth_result.tenant_id,
             email=google_user["email"],
             display_name=google_user.get("name"),
             phone=None,
-            role=role,
+            role=auth_result.role,
             created_at=None,  # Not fetching from DB for performance
             updated_at=None,
         ),
