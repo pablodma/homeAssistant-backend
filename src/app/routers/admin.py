@@ -12,9 +12,11 @@ from ..schemas.admin import (
     AgentPromptHistory,
     AgentPromptResponse,
     AgentPromptUpdate,
+    AgentPromptWithDefault,
     InteractionListResponse,
     InteractionResponse,
     StatsResponse,
+    get_default_prompt,
 )
 from ..schemas.auth import CurrentUser
 from ..services.admin import AdminService
@@ -51,19 +53,27 @@ async def list_agents(
 # =====================================================
 
 
-@router.get("/agents/{agent_name}/prompt", response_model=Optional[AgentPromptResponse])
+@router.get("/agents/{agent_name}/prompt", response_model=AgentPromptWithDefault)
 async def get_agent_prompt(
     tenant_id: UUID,
     agent_name: str,
     service: AdminService = Depends(get_admin_service),
     _: CurrentUser = Depends(get_current_user),
-) -> Optional[AgentPromptResponse]:
+) -> AgentPromptWithDefault:
     """Get the active prompt for an agent.
 
-    Returns the current active prompt content and metadata.
-    Returns null if no custom prompt is configured.
+    Returns the current active prompt content and metadata,
+    along with the default prompt for reference.
     """
-    return await service.get_prompt(str(tenant_id), agent_name)
+    custom_prompt = await service.get_prompt(str(tenant_id), agent_name)
+    default_prompt = get_default_prompt(agent_name)
+    
+    return AgentPromptWithDefault(
+        agent_name=agent_name,
+        custom_prompt=custom_prompt,
+        default_prompt=default_prompt,
+        is_using_default=custom_prompt is None,
+    )
 
 
 @router.put("/agents/{agent_name}/prompt", response_model=AgentPromptResponse)
