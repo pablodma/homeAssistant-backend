@@ -49,7 +49,7 @@ async def run_migration():
 
     # Read migration file
     migration_path = os.path.join(
-        os.path.dirname(__file__), "db", "003_agent_admin.sql"
+        os.path.dirname(__file__), "db", "007_subscriptions_coupons_pricing.sql"
     )
     
     with open(migration_path, "r", encoding="utf-8") as f:

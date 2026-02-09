@@ -1,10 +1,20 @@
 """Plan pricing repository for database operations."""
 
+import json
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 from ..config.database import get_pool
+
+
+def _parse_plan_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Parse plan row, converting JSONB fields."""
+    if row and "features" in row:
+        features = row["features"]
+        if isinstance(features, str):
+            row["features"] = json.loads(features)
+    return row
 
 
 # =============================================================================
@@ -31,7 +41,7 @@ async def get_all_plans(active_only: bool = True) -> list[dict[str, Any]]:
                 ORDER BY price_monthly ASC
                 """
             )
-        return [dict(row) for row in rows]
+        return [_parse_plan_row(dict(row)) for row in rows]
 
 
 async def get_plan_by_type(plan_type: str) -> dict[str, Any] | None:
@@ -43,7 +53,7 @@ async def get_plan_by_type(plan_type: str) -> dict[str, Any] | None:
             "SELECT * FROM plan_pricing WHERE plan_type = $1",
             plan_type
         )
-        return dict(row) if row else None
+        return _parse_plan_row(dict(row)) if row else None
 
 
 async def get_plan_by_id(plan_id: UUID) -> dict[str, Any] | None:
@@ -55,7 +65,7 @@ async def get_plan_by_id(plan_id: UUID) -> dict[str, Any] | None:
             "SELECT * FROM plan_pricing WHERE id = $1",
             plan_id
         )
-        return dict(row) if row else None
+        return _parse_plan_row(dict(row)) if row else None
 
 
 async def update_plan_pricing(
@@ -133,7 +143,7 @@ async def update_plan_pricing(
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(query, *values)
-        return dict(row) if row else None
+        return _parse_plan_row(dict(row)) if row else None
 
 
 async def get_plan_price(plan_type: str) -> Decimal | None:
@@ -183,7 +193,7 @@ async def compare_plans(
         if len(rows) != 2:
             return None
 
-        plans = {row["plan_type"]: dict(row) for row in rows}
+        plans = {row["plan_type"]: _parse_plan_row(dict(row)) for row in rows}
         current = plans.get(current_plan_type)
         target = plans.get(target_plan_type)
 
