@@ -369,3 +369,97 @@ Sos el agente especializado en gestión de vehículos. Ayudás a los usuarios a:
 def get_default_prompt(agent_name: str) -> str:
     """Get default prompt for an agent."""
     return DEFAULT_PROMPTS.get(agent_name, f"Sos el agente de {agent_name} de HomeAI.")
+
+
+# =====================================================
+# QUALITY ISSUES
+# =====================================================
+
+
+class QualityIssueBase(BaseSchema):
+    """Base schema for quality issues."""
+
+    issue_type: str  # 'hard_error', 'soft_error'
+    issue_category: str
+    error_message: str
+    severity: str = "medium"
+
+
+class QualityIssueResponse(QualityIssueBase):
+    """Full quality issue response."""
+
+    id: UUID
+    tenant_id: UUID
+    interaction_id: Optional[UUID] = None
+    user_phone: Optional[str] = None
+    agent_name: Optional[str] = None
+    tool_name: Optional[str] = None
+    message_in: Optional[str] = None
+    message_out: Optional[str] = None
+    error_code: Optional[str] = None
+    qa_analysis: Optional[str] = None
+    qa_suggestion: Optional[str] = None
+    qa_confidence: Optional[float] = None
+    request_payload: Optional[dict[str, Any]] = None
+    stack_trace: Optional[str] = None
+    correlation_id: Optional[str] = None
+    is_resolved: bool = False
+    resolved_at: Optional[datetime] = None
+    resolved_by: Optional[str] = None
+    resolution_notes: Optional[str] = None
+    created_at: datetime
+
+
+class QualityIssueListItem(BaseSchema):
+    """Simplified quality issue for list view."""
+
+    id: UUID
+    issue_type: str
+    issue_category: str
+    severity: str
+    agent_name: Optional[str] = None
+    user_phone: Optional[str] = None
+    message_preview: str = Field(..., description="First 100 chars of message_in")
+    error_preview: str = Field(..., description="First 150 chars of error_message")
+    is_resolved: bool
+    created_at: datetime
+
+
+class QualityIssueListResponse(BaseSchema):
+    """Paginated list of quality issues."""
+
+    items: list[QualityIssueListItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class QualityIssueFilters(BaseSchema):
+    """Filters for quality issue queries."""
+
+    issue_type: Optional[str] = None  # 'hard_error', 'soft_error'
+    issue_category: Optional[str] = None
+    severity: Optional[str] = None
+    agent_name: Optional[str] = None
+    is_resolved: Optional[bool] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+
+
+class QualityIssueResolve(BaseSchema):
+    """Schema for resolving a quality issue."""
+
+    resolution_notes: Optional[str] = None
+    resolved_by: Optional[str] = None
+
+
+class QualityIssueCounts(BaseSchema):
+    """Counts of quality issues by type."""
+
+    total: int
+    hard_errors: int
+    soft_errors: int
+    unresolved: int
+    by_category: dict[str, int]
+    by_severity: dict[str, int]

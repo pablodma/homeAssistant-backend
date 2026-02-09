@@ -15,6 +15,10 @@ from ..schemas.admin import (
     AgentPromptWithDefault,
     InteractionListResponse,
     InteractionResponse,
+    QualityIssueCounts,
+    QualityIssueListResponse,
+    QualityIssueResolve,
+    QualityIssueResponse,
     StatsResponse,
     get_default_prompt,
 )
@@ -188,3 +192,102 @@ async def get_stats(
     - Daily activity
     """
     return await service.get_stats(str(tenant_id), days)
+
+
+# =====================================================
+# QUALITY ISSUES
+# =====================================================
+
+
+@router.get("/quality-issues", response_model=QualityIssueListResponse)
+async def list_quality_issues(
+    tenant_id: UUID,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    issue_type: Optional[str] = Query(None, pattern="^(hard_error|soft_error)$"),
+    issue_category: Optional[str] = None,
+    severity: Optional[str] = Query(None, pattern="^(low|medium|high|critical)$"),
+    agent_name: Optional[str] = None,
+    is_resolved: Optional[bool] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    service: AdminService = Depends(get_admin_service),
+    _: CurrentUser = Depends(get_current_user),
+) -> QualityIssueListResponse:
+    """List quality issues with filtering and pagination.
+
+    Supports filtering by:
+    - issue_type: 'hard_error' or 'soft_error'
+    - issue_category: specific error category
+    - severity: 'low', 'medium', 'high', 'critical'
+    - agent_name: filter by agent
+    - is_resolved: true/false
+    - date range
+    """
+    return await service.get_quality_issues(
+        tenant_id=str(tenant_id),
+        page=page,
+        page_size=page_size,
+        issue_type=issue_type,
+        issue_category=issue_category,
+        severity=severity,
+        agent_name=agent_name,
+        is_resolved=is_resolved,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+@router.get("/quality-issues/counts", response_model=QualityIssueCounts)
+async def get_quality_issue_counts(
+    tenant_id: UUID,
+    days: int = Query(30, ge=1, le=365),
+    service: AdminService = Depends(get_admin_service),
+    _: CurrentUser = Depends(get_current_user),
+) -> QualityIssueCounts:
+    """Get counts of quality issues for summary cards.
+
+    Returns aggregated counts by type, category, and severity.
+    """
+    return await service.get_quality_issue_counts(str(tenant_id), days)
+
+
+@router.get("/quality-issues/{issue_id}", response_model=QualityIssueResponse)
+async def get_quality_issue(
+    tenant_id: UUID,
+    issue_id: UUID,
+    service: AdminService = Depends(get_admin_service),
+    _: CurrentUser = Depends(get_current_user),
+) -> QualityIssueResponse:
+    """Get details of a specific quality issue.
+
+    Returns full details including error message, stack trace (for hard errors),
+    and QA analysis (for soft errors).
+    """
+    issue = await service.get_quality_issue(str(tenant_id), str(issue_id))
+    if not issue:
+        raise HTTPException(status_code=404, detail="Quality issue not found")
+    return issue
+
+
+@router.patch("/quality-issues/{issue_id}/resolve", response_model=QualityIssueResponse)
+async def resolve_quality_issue(
+    tenant_id: UUID,
+    issue_id: UUID,
+    body: QualityIssueResolve,
+    service: AdminService = Depends(get_admin_service),
+    user: CurrentUser = Depends(get_current_user),
+) -> QualityIssueResponse:
+    """Mark a quality issue as resolved.
+
+    Optionally include resolution notes explaining how the issue was fixed.
+    """
+    issue = await service.resolve_quality_issue(
+        tenant_id=str(tenant_id),
+        issue_id=str(issue_id),
+        resolved_by=body.resolved_by or user.email,
+        resolution_notes=body.resolution_notes,
+    )
+    if not issue:
+        raise HTTPException(status_code=404, detail="Quality issue not found")
+    return issue

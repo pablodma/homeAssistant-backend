@@ -270,3 +270,181 @@ class AdminRepository:
                 for row in by_day_rows
             ],
         }
+
+    # =====================================================
+    # QUALITY ISSUES
+    # =====================================================
+
+    async def get_quality_issues(
+        self,
+        tenant_id: str,
+        page: int = 1,
+        page_size: int = 50,
+        issue_type: Optional[str] = None,
+        issue_category: Optional[str] = None,
+        severity: Optional[str] = None,
+        agent_name: Optional[str] = None,
+        is_resolved: Optional[bool] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Get paginated quality issues with filters."""
+        pool = await get_pool()
+
+        # Build query
+        conditions = ["tenant_id = $1"]
+        params: list[Any] = [tenant_id]
+        param_idx = 2
+
+        if issue_type:
+            conditions.append(f"issue_type = ${param_idx}")
+            params.append(issue_type)
+            param_idx += 1
+
+        if issue_category:
+            conditions.append(f"issue_category = ${param_idx}")
+            params.append(issue_category)
+            param_idx += 1
+
+        if severity:
+            conditions.append(f"severity = ${param_idx}")
+            params.append(severity)
+            param_idx += 1
+
+        if agent_name:
+            conditions.append(f"agent_name = ${param_idx}")
+            params.append(agent_name)
+            param_idx += 1
+
+        if is_resolved is not None:
+            conditions.append(f"is_resolved = ${param_idx}")
+            params.append(is_resolved)
+            param_idx += 1
+
+        if start_date:
+            conditions.append(f"created_at >= ${param_idx}")
+            params.append(start_date)
+            param_idx += 1
+
+        if end_date:
+            conditions.append(f"created_at <= ${param_idx}")
+            params.append(end_date)
+            param_idx += 1
+
+        where_clause = " AND ".join(conditions)
+
+        # Count total
+        count_query = f"SELECT COUNT(*) FROM quality_issues WHERE {where_clause}"
+        count_row = await pool.fetchrow(count_query, *params)
+        total = count_row["count"]
+
+        # Get page
+        offset = (page - 1) * page_size
+        query = f"""
+            SELECT id, issue_type, issue_category, severity, agent_name, user_phone,
+                   LEFT(message_in, 100) as message_preview,
+                   LEFT(error_message, 150) as error_preview,
+                   is_resolved, created_at
+            FROM quality_issues
+            WHERE {where_clause}
+            ORDER BY created_at DESC
+            LIMIT ${param_idx} OFFSET ${param_idx + 1}
+        """
+        params.extend([page_size, offset])
+
+        rows = await pool.fetch(query, *params)
+        return [dict(row) for row in rows], total
+
+    async def get_quality_issue(
+        self, tenant_id: str, issue_id: str
+    ) -> Optional[dict[str, Any]]:
+        """Get a single quality issue by ID."""
+        pool = await get_pool()
+        query = """
+            SELECT id, tenant_id, interaction_id, issue_type, issue_category,
+                   user_phone, agent_name, tool_name, message_in, message_out,
+                   error_code, error_message, severity,
+                   qa_analysis, qa_suggestion, qa_confidence,
+                   request_payload, stack_trace, correlation_id,
+                   is_resolved, resolved_at, resolved_by, resolution_notes,
+                   created_at
+            FROM quality_issues
+            WHERE tenant_id = $1 AND id = $2
+        """
+        row = await pool.fetchrow(query, tenant_id, issue_id)
+        return dict(row) if row else None
+
+    async def resolve_quality_issue(
+        self,
+        tenant_id: str,
+        issue_id: str,
+        resolved_by: Optional[str] = None,
+        resolution_notes: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Mark a quality issue as resolved."""
+        pool = await get_pool()
+        query = """
+            UPDATE quality_issues
+            SET is_resolved = true,
+                resolved_at = NOW(),
+                resolved_by = $3,
+                resolution_notes = $4
+            WHERE tenant_id = $1 AND id = $2
+            RETURNING id, tenant_id, interaction_id, issue_type, issue_category,
+                      user_phone, agent_name, tool_name, message_in, message_out,
+                      error_code, error_message, severity,
+                      qa_analysis, qa_suggestion, qa_confidence,
+                      request_payload, stack_trace, correlation_id,
+                      is_resolved, resolved_at, resolved_by, resolution_notes,
+                      created_at
+        """
+        row = await pool.fetchrow(query, tenant_id, issue_id, resolved_by, resolution_notes)
+        return dict(row) if row else None
+
+    async def get_quality_issue_counts(
+        self,
+        tenant_id: str,
+        days: int = 30,
+    ) -> dict[str, Any]:
+        """Get counts of quality issues for summary."""
+        pool = await get_pool()
+        start_date = datetime.now() - timedelta(days=days)
+
+        # Overall counts
+        counts_query = """
+            SELECT 
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE issue_type = 'hard_error') as hard_errors,
+                COUNT(*) FILTER (WHERE issue_type = 'soft_error') as soft_errors,
+                COUNT(*) FILTER (WHERE is_resolved = false) as unresolved
+            FROM quality_issues
+            WHERE tenant_id = $1 AND created_at >= $2
+        """
+        counts = await pool.fetchrow(counts_query, tenant_id, start_date)
+
+        # By category
+        by_category_query = """
+            SELECT issue_category, COUNT(*) as count
+            FROM quality_issues
+            WHERE tenant_id = $1 AND created_at >= $2
+            GROUP BY issue_category
+        """
+        by_category_rows = await pool.fetch(by_category_query, tenant_id, start_date)
+
+        # By severity
+        by_severity_query = """
+            SELECT severity, COUNT(*) as count
+            FROM quality_issues
+            WHERE tenant_id = $1 AND created_at >= $2
+            GROUP BY severity
+        """
+        by_severity_rows = await pool.fetch(by_severity_query, tenant_id, start_date)
+
+        return {
+            "total": counts["total"],
+            "hard_errors": counts["hard_errors"],
+            "soft_errors": counts["soft_errors"],
+            "unresolved": counts["unresolved"],
+            "by_category": {row["issue_category"]: row["count"] for row in by_category_rows},
+            "by_severity": {row["severity"]: row["count"] for row in by_severity_rows},
+        }

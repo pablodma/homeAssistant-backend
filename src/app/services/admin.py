@@ -12,6 +12,9 @@ from ..schemas.admin import (
     AgentPromptResponse,
     InteractionListResponse,
     InteractionResponse,
+    QualityIssueCounts,
+    QualityIssueListResponse,
+    QualityIssueResponse,
     StatsResponse,
 )
 
@@ -140,3 +143,78 @@ class AdminService:
         """Get statistics for the admin dashboard."""
         data = await self.repo.get_stats(tenant_id, days)
         return StatsResponse(**data)
+
+    # =====================================================
+    # QUALITY ISSUES
+    # =====================================================
+
+    async def get_quality_issues(
+        self,
+        tenant_id: str,
+        page: int = 1,
+        page_size: int = 50,
+        issue_type: Optional[str] = None,
+        issue_category: Optional[str] = None,
+        severity: Optional[str] = None,
+        agent_name: Optional[str] = None,
+        is_resolved: Optional[bool] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> QualityIssueListResponse:
+        """Get paginated list of quality issues."""
+        items, total = await self.repo.get_quality_issues(
+            tenant_id=tenant_id,
+            page=page,
+            page_size=page_size,
+            issue_type=issue_type,
+            issue_category=issue_category,
+            severity=severity,
+            agent_name=agent_name,
+            is_resolved=is_resolved,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        total_pages = (total + page_size - 1) // page_size
+
+        return QualityIssueListResponse(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
+
+    async def get_quality_issue(
+        self, tenant_id: str, issue_id: str
+    ) -> Optional[QualityIssueResponse]:
+        """Get a single quality issue by ID."""
+        data = await self.repo.get_quality_issue(tenant_id, issue_id)
+        if data:
+            return QualityIssueResponse(**data)
+        return None
+
+    async def resolve_quality_issue(
+        self,
+        tenant_id: str,
+        issue_id: str,
+        resolved_by: Optional[str] = None,
+        resolution_notes: Optional[str] = None,
+    ) -> Optional[QualityIssueResponse]:
+        """Mark a quality issue as resolved."""
+        data = await self.repo.resolve_quality_issue(
+            tenant_id=tenant_id,
+            issue_id=issue_id,
+            resolved_by=resolved_by,
+            resolution_notes=resolution_notes,
+        )
+        if data:
+            return QualityIssueResponse(**data)
+        return None
+
+    async def get_quality_issue_counts(
+        self, tenant_id: str, days: int = 30
+    ) -> QualityIssueCounts:
+        """Get counts of quality issues."""
+        data = await self.repo.get_quality_issue_counts(tenant_id, days)
+        return QualityIssueCounts(**data)

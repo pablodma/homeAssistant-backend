@@ -530,6 +530,39 @@ export function useAuthenticatedQuery<T>(options: UseQueryOptions<T>) {
 
 ## ✅ Problemas Resueltos
 
+### [2026-02-09] Error fijar_presupuesto - Columna updated_at inexistente
+
+**Síntoma:**
+- Al intentar fijar un presupuesto via WhatsApp ("quiero fijar un presupuesto de 500.000 en supermercado mensual"), el bot respondía con error
+- El tool call se ejecutaba correctamente pero el backend fallaba
+
+**Causa raíz:**
+```
+asyncpg.exceptions.UndefinedColumnError: column "updated_at" of relation "budget_categories" does not exist
+```
+
+La función `update_budget_category` en `finance.py` intentaba setear `updated_at = NOW()`, pero la tabla `budget_categories` no tiene esa columna.
+
+**Solución:**
+Removida la línea que intentaba actualizar `updated_at` en `homeai-api/src/app/repositories/finance.py`:
+
+```python
+# Antes (línea 321):
+set_parts.append("updated_at = NOW()")
+
+# Después:
+# Note: budget_categories table doesn't have updated_at column
+```
+
+**Archivos modificados:**
+- `homeai-api/src/app/repositories/finance.py` - Removida referencia a `updated_at`
+
+**Verificación:**
+- ✅ Tool `fijar_presupuesto` funciona correctamente
+- ✅ Presupuestos se crean/actualizan sin error
+
+---
+
 ### [2026-02-09] Error 401 Unauthorized - Google OAuth + DB Schema + WhatsApp Token
 
 **Síntomas reportados:**
