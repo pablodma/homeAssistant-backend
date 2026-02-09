@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .config.database import close_pool, get_pool
 from .middleware.correlation import CorrelationIdMiddleware
-from .routers import admin, auth, calendar, finance, health, migration, onboarding, tenants
+from .routers import admin, auth, calendar, finance, health, onboarding, tenants
 from .routers.calendar import oauth_router
 
 
@@ -72,8 +72,6 @@ def create_app() -> FastAPI:
     app.include_router(oauth_router, prefix="/api/v1")
     # Admin endpoints
     app.include_router(admin.router, prefix="/api/v1")
-    # TEMPORARY: Migration endpoint - DELETE AFTER USE
-    app.include_router(migration.router, prefix="/api/v1")
     
     return app
 
