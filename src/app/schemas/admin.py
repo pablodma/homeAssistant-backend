@@ -73,6 +73,19 @@ class AgentPromptHistory(BaseSchema):
     prompt_preview: str
 
 
+class PromptUpdateResponse(BaseSchema):
+    """Response after updating a prompt via GitHub API."""
+
+    agent_name: str
+    commit_sha: str = Field(..., description="Git commit SHA")
+    commit_url: str = Field(..., description="URL to view the commit on GitHub")
+    file_url: str = Field(..., description="URL to view the file on GitHub")
+    message: str = Field(
+        default="Prompt actualizado. El cambio se desplegará en ~30 segundos.",
+        description="Success message",
+    )
+
+
 # =====================================================
 # AGENT INTERACTIONS
 # =====================================================

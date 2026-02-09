@@ -15,6 +15,7 @@ from ..schemas.admin import (
     AgentPromptWithDefault,
     InteractionListResponse,
     InteractionResponse,
+    PromptUpdateResponse,
     QualityIssueCounts,
     QualityIssueListResponse,
     QualityIssueResolve,
@@ -24,6 +25,7 @@ from ..schemas.admin import (
 )
 from ..schemas.auth import CurrentUser
 from ..services.admin import AdminService
+from ..services.github import GitHubService, GitHubServiceError
 
 router = APIRouter(prefix="/tenants/{tenant_id}/admin", tags=["Admin"])
 
@@ -80,32 +82,53 @@ async def get_agent_prompt(
     )
 
 
-@router.put("/agents/{agent_name}/prompt", response_model=AgentPromptResponse)
+@router.put("/agents/{agent_name}/prompt", response_model=PromptUpdateResponse)
 async def update_agent_prompt(
     tenant_id: UUID,
     agent_name: str,
     body: AgentPromptUpdate,
-    service: AdminService = Depends(get_admin_service),
     user: CurrentUser = Depends(get_current_user),
-) -> AgentPromptResponse:
-    """Update the prompt for an agent.
+) -> PromptUpdateResponse:
+    """Update the prompt for an agent via GitHub API.
 
-    DEPRECATED: Los prompts ahora viven en archivos de configuración.
-    Para modificar un prompt:
-    1. Editar docs/prompts/{agent}-agent.md
-    2. Commit + push
-    3. Railway redeploya automáticamente
-    
-    Este endpoint se mantiene por compatibilidad pero no tiene efecto.
+    This endpoint commits the new prompt to the GitHub repository,
+    which triggers an automatic Railway deployment (~30 seconds).
+
+    Requires GITHUB_TOKEN environment variable to be configured.
     """
-    raise HTTPException(
-        status_code=400,
-        detail={
-            "error": "Los prompts son de solo lectura",
-            "message": "Para modificar un prompt, editá docs/prompts/{agent}-agent.md y pusheá a git",
-            "docs": "https://github.com/pablodma/homeAssistant-asistant/tree/main/docs/prompts",
-        },
-    )
+    github = GitHubService()
+
+    if not github.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "GitHub integration not configured",
+                "message": "Contact the administrator to configure GITHUB_TOKEN",
+            },
+        )
+
+    try:
+        result = await github.update_prompt(
+            agent_name=agent_name,
+            content=body.prompt_content,
+            updated_by=user.email or "admin",
+        )
+
+        return PromptUpdateResponse(
+            agent_name=agent_name,
+            commit_sha=result["commit_sha"],
+            commit_url=result["commit_url"],
+            file_url=result["file_url"],
+        )
+
+    except GitHubServiceError as e:
+        raise HTTPException(
+            status_code=e.status_code or 500,
+            detail={
+                "error": "Failed to update prompt",
+                "message": e.message,
+            },
+        )
 
 
 @router.get("/agents/{agent_name}/prompt/history", response_model=list[AgentPromptHistory])

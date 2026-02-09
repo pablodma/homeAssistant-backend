@@ -100,7 +100,22 @@ psql $DATABASE_URL -f scripts/db/init.sql
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | ✅ |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth secret | ✅ |
 | `CORS_ORIGINS` | URLs permitidas para CORS | ✅ |
+| `GITHUB_TOKEN` | Personal Access Token para editar prompts | ❌* |
+| `GITHUB_REPO` | Repositorio de prompts (default: pablodma/homeAssistant-asistant) | ❌ |
+| `GITHUB_BRANCH` | Branch de prompts (default: master) | ❌ |
 | `APP_ENV` | development/production | ❌ |
+
+*`GITHUB_TOKEN` es requerido si querés editar prompts desde el admin panel.
+
+### Configurar GitHub Token
+
+Para habilitar la edición de prompts desde el admin panel:
+
+1. Ir a [GitHub Settings > Developer settings > Personal access tokens > Fine-grained tokens](https://github.com/settings/tokens?type=beta)
+2. Crear nuevo token con:
+   - **Repository access**: Only select repositories → `homeAssistant-asistant`
+   - **Permissions**: Contents → Read and write
+3. Copiar el token y agregarlo como variable `GITHUB_TOKEN` en Railway
 
 ## Multi-tenancy
 

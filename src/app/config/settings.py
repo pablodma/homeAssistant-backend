@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     # External Services
     openai_api_key: str = ""
 
+    # GitHub API (for prompt editing)
+    github_token: str = ""  # Personal Access Token with repo write access
+    github_repo: str = "pablodma/homeAssistant-asistant"  # owner/repo
+    github_branch: str = "master"
+
     @property
     def cors_origins(self) -> list[str]:
         """Parse CORS origins from string (JSON array, comma-separated, or bracketed)."""
