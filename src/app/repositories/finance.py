@@ -318,7 +318,7 @@ async def update_budget_category(
     if not set_parts:
         return await get_budget_category_by_id(tenant_id, category_id)
     
-    set_parts.append("updated_at = NOW()")
+    # Note: budget_categories table doesn't have updated_at column
     params.extend([category_id, tenant_id])
     
     query = f"""

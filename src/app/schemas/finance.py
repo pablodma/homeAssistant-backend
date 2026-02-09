@@ -158,6 +158,16 @@ class AgentLogExpenseRequest(BaseSchema):
     expense_date: date | None = Field(None, description="Expense date (defaults to today)")
 
 
+class BudgetStatusInfo(BaseSchema):
+    """Budget status info returned with expense registration."""
+    
+    category: str
+    monthly_limit: Decimal
+    spent_this_month: Decimal
+    remaining: Decimal
+    percentage_used: float
+
+
 class AgentLogExpenseResponse(BaseSchema):
     """Response to agent after logging expense."""
     
@@ -165,6 +175,7 @@ class AgentLogExpenseResponse(BaseSchema):
     expense_id: UUID
     message: str
     alert: BudgetAlert | None = None
+    budget_status: BudgetStatusInfo | None = None  # Always included if category has limit
 
 
 class AgentGetReportRequest(BaseSchema):
@@ -264,3 +275,19 @@ class AgentSetBudgetResponse(BaseSchema):
     message: str
     budget: dict | None = None
     created: bool = False  # True if category was created, False if updated
+
+
+class AgentCategoryItem(BaseSchema):
+    """Single category item for agent list."""
+    
+    id: UUID
+    name: str
+    monthly_limit: Decimal | None = None
+    current_spending: Decimal = Decimal("0")
+
+
+class AgentListCategoriesResponse(BaseSchema):
+    """Response with list of categories for agent."""
+    
+    categories: list[AgentCategoryItem]
+    count: int

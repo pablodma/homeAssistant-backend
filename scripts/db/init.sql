@@ -317,6 +317,50 @@ CREATE POLICY tenant_isolation_audit ON audit_logs
 */
 
 -- =============================================================================
+-- CHAT MEMORY (Agent Sessions)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    session_key VARCHAR(255) PRIMARY KEY,
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    phone VARCHAR(20) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_tenant ON chat_sessions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_phone ON chat_sessions(phone);
+
+COMMENT ON TABLE chat_sessions IS 'Sesiones de chat para memoria del agente';
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_key VARCHAR(255) NOT NULL REFERENCES chat_sessions(session_key) ON DELETE CASCADE,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_key, created_at);
+
+COMMENT ON TABLE chat_messages IS 'Mensajes de historial de chat por sesión';
+
+CREATE TABLE IF NOT EXISTS pending_contexts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_key VARCHAR(255) NOT NULL,
+    context_type VARCHAR(50) NOT NULL,
+    context_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(session_key, context_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_context_session ON pending_contexts(session_key);
+
+COMMENT ON TABLE pending_contexts IS 'Contexto pendiente para acciones que requieren confirmación del usuario';
+COMMENT ON COLUMN pending_contexts.context_type IS 'Tipo de contexto: pending_expense, pending_event, etc.';
+
+-- =============================================================================
 -- FUNCIONES UTILITARIAS
 -- =============================================================================
 
@@ -340,6 +384,12 @@ CREATE TRIGGER update_shopping_lists_updated_at BEFORE UPDATE ON shopping_lists
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_failed_operations_updated_at BEFORE UPDATE ON failed_operations
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_chat_sessions_updated_at BEFORE UPDATE ON chat_sessions
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_pending_contexts_updated_at BEFORE UPDATE ON pending_contexts
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =============================================================================

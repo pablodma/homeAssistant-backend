@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     github_repo: str = "pablodma/homeAssistant-asistant"  # owner/repo
     github_branch: str = "master"
 
+    # Mercado Pago
+    mp_access_token: str = ""  # Token privado de MP
+    mp_public_key: str = ""  # Clave publica para frontend
+    mp_webhook_secret: str = ""  # Para validar firma de webhooks (opcional)
+    mp_sandbox: bool = True  # True para ambiente de pruebas
+
     @property
     def cors_origins(self) -> list[str]:
         """Parse CORS origins from string (JSON array, comma-separated, or bracketed)."""

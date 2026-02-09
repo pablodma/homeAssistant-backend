@@ -8,11 +8,14 @@ from uuid import UUID
 from ..repositories import finance as repo
 from ..schemas.finance import (
     AgentBudgetStatus,
+    AgentCategoryItem,
     AgentGetBudgetResponse,
     AgentGetReportResponse,
+    AgentListCategoriesResponse,
     AgentLogExpenseResponse,
     BudgetAlert,
     BudgetCategoryResponse,
+    BudgetStatusInfo,
     CategorySummary,
     ExpenseResponse,
     ReportSummary,
@@ -92,6 +95,9 @@ async def create_expense_with_alert(
     # Check budget alert
     alert = await check_category_alert(tenant_id, category_id)
     
+    # Get budget status info (always, if category has limit)
+    budget_status = await get_budget_status_for_category(tenant_id, category_id, category_name)
+    
     # Build response message
     if alert:
         if alert.alert_level == "exceeded":
@@ -108,6 +114,42 @@ async def create_expense_with_alert(
         expense_id=expense["id"],
         message=message,
         alert=alert,
+        budget_status=budget_status,
+    )
+
+
+async def get_budget_status_for_category(
+    tenant_id: UUID, 
+    category_id: UUID, 
+    category_name: str
+) -> BudgetStatusInfo | None:
+    """Get budget status for a specific category."""
+    category = await repo.get_budget_category_by_id(tenant_id, category_id)
+    
+    if not category or not category.get("monthly_limit"):
+        return None
+    
+    today = date.today()
+    spending_data = await repo.get_monthly_spending_by_category(
+        tenant_id, today.year, today.month
+    )
+    
+    cat_spending = next(
+        (s for s in spending_data if s["category_id"] == category_id),
+        None
+    )
+    
+    current = Decimal(str(cat_spending["current_spending"])) if cat_spending else Decimal("0")
+    limit = Decimal(str(category["monthly_limit"]))
+    remaining = max(limit - current, Decimal("0"))
+    percentage = float(current / limit * 100) if limit > 0 else 0.0
+    
+    return BudgetStatusInfo(
+        category=category_name,
+        monthly_limit=limit,
+        spent_this_month=current,
+        remaining=remaining,
+        percentage_used=percentage,
     )
 
 
@@ -252,6 +294,45 @@ async def get_budget_for_agent(
                 alerts.append(f"📊 {cat['name']}: Atención ({percentage:.0f}%)")
     
     return AgentGetBudgetResponse(budgets=budgets, alerts=alerts)
+
+
+async def list_categories_for_agent(tenant_id: UUID) -> AgentListCategoriesResponse:
+    """List all categories for agent to show options to user.
+    
+    Returns all budget categories with their current spending for the month.
+    """
+    categories = await repo.get_all_budget_categories(tenant_id)
+    
+    if not categories:
+        return AgentListCategoriesResponse(categories=[], count=0)
+    
+    # Get current month spending
+    today = date.today()
+    spending_data = await repo.get_monthly_spending_by_category(
+        tenant_id, today.year, today.month
+    )
+    spending_map = {s["category_id"]: s["current_spending"] for s in spending_data}
+    
+    items = []
+    for cat in categories:
+        current_spending = Decimal(str(spending_map.get(cat["id"], 0)))
+        items.append(AgentCategoryItem(
+            id=cat["id"],
+            name=cat["name"],
+            monthly_limit=Decimal(str(cat["monthly_limit"])) if cat.get("monthly_limit") else None,
+            current_spending=current_spending,
+        ))
+    
+    return AgentListCategoriesResponse(categories=items, count=len(items))
+
+
+async def validate_category_exists(tenant_id: UUID, category_name: str) -> dict | None:
+    """Check if a category exists (case-insensitive).
+    
+    Returns the category dict if found, None if not found.
+    Does NOT create new categories.
+    """
+    return await repo.get_budget_category_by_name(tenant_id, category_name)
 
 
 async def get_full_report(

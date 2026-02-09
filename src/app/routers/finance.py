@@ -17,6 +17,7 @@ from ..schemas.finance import (
     AgentGetBudgetResponse,
     AgentGetReportRequest,
     AgentGetReportResponse,
+    AgentListCategoriesResponse,
     AgentLogExpenseRequest,
     AgentLogExpenseResponse,
     AgentModifyExpenseRequest,
@@ -124,6 +125,21 @@ async def agent_set_budget(
         alert_threshold=alert_threshold,
     )
     return AgentSetBudgetResponse(**result)
+
+
+@router.get("/agent/categories", response_model=AgentListCategoriesResponse)
+async def agent_list_categories(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+) -> AgentListCategoriesResponse:
+    """
+    List all budget categories for the agent.
+    
+    Used to show category options to user when registering an expense
+    with an unknown category.
+    """
+    return await finance_service.list_categories_for_agent(tenant_id)
 
 
 @router.delete("/agent/expense", response_model=AgentDeleteExpenseResponse)
