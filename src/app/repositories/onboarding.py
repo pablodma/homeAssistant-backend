@@ -125,13 +125,29 @@ class OnboardingRepository:
         
         return UUID(str(mapping_id))
 
+    def _normalize_phone(self, phone: str) -> str:
+        """
+        Normalize phone number to E.164 format.
+        
+        WhatsApp webhooks may send numbers without the '+' prefix,
+        but we store them with '+'. This ensures consistent lookups.
+        """
+        phone = phone.strip()
+        if not phone.startswith("+"):
+            phone = f"+{phone}"
+        return phone
+
     async def get_tenant_by_phone(self, phone: str) -> dict[str, Any] | None:
         """
         Get tenant info by phone number.
         
         Used by the bot for multitenancy resolution.
+        Normalizes the phone number to E.164 format before lookup.
         """
         pool = await get_pool()
+        
+        # Normalize phone to E.164 format (with '+' prefix)
+        normalized_phone = self._normalize_phone(phone)
         
         query = """
             SELECT 
@@ -149,7 +165,7 @@ class OnboardingRepository:
             WHERE ptm.phone = $1
         """
         
-        row = await pool.fetchrow(query, phone)
+        row = await pool.fetchrow(query, normalized_phone)
         return dict(row) if row else None
 
     async def get_phones_by_tenant(self, tenant_id: UUID) -> list[dict[str, Any]]:
@@ -171,9 +187,11 @@ class OnboardingRepository:
         """Remove a phone from a tenant. Returns True if deleted."""
         pool = await get_pool()
         
+        normalized_phone = self._normalize_phone(phone)
+        
         result = await pool.execute(
             "DELETE FROM phone_tenant_mapping WHERE phone = $1 AND tenant_id = $2",
-            phone,
+            normalized_phone,
             tenant_id,
         )
         
@@ -183,9 +201,11 @@ class OnboardingRepository:
         """Check if a phone is already registered."""
         pool = await get_pool()
         
+        normalized_phone = self._normalize_phone(phone)
+        
         exists = await pool.fetchval(
             "SELECT EXISTS(SELECT 1 FROM phone_tenant_mapping WHERE phone = $1)",
-            phone,
+            normalized_phone,
         )
         
         return bool(exists)
