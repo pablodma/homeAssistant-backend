@@ -406,7 +406,34 @@ Considerá especialmente si el bot confirmó acciones que fallaron (hallucinatio
 
 
 def get_default_prompt(agent_name: str) -> str:
-    """Get default prompt for an agent."""
+    """Get default prompt for an agent.
+    
+    Reads from markdown files in docs/prompts/ first, falls back to DEFAULT_PROMPTS.
+    This ensures admin shows the same prompt the bot uses.
+    """
+    from pathlib import Path
+    
+    # Mapping of agent names to their prompt files
+    prompt_files = {
+        "finance": "finance-agent.md",
+        "calendar": "calendar-agent.md",
+        "reminder": "reminder-agent.md",
+        "shopping": "shopping-agent.md",
+        "vehicle": "vehicle-agent.md",
+    }
+    
+    # Try to load from file
+    if agent_name in prompt_files:
+        prompts_dir = Path(__file__).parent.parent.parent.parent / "docs" / "prompts"
+        prompt_path = prompts_dir / prompt_files[agent_name]
+        
+        try:
+            if prompt_path.exists():
+                return prompt_path.read_text(encoding="utf-8")
+        except Exception:
+            pass  # Fall through to DEFAULT_PROMPTS
+    
+    # Fallback to hardcoded defaults (router, qa)
     return DEFAULT_PROMPTS.get(agent_name, f"Sos el agente de {agent_name} de HomeAI.")
 
 
