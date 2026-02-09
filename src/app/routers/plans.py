@@ -181,7 +181,7 @@ async def update_plan_pricing(
     # Update plan
     plan = await plan_pricing_repo.update_plan_pricing(
         plan_type=plan_type,
-        updated_by=current_user.user_id,
+        updated_by=current_user.id,
         **update_data,
     )
 
@@ -191,6 +191,6 @@ async def update_plan_pricing(
             detail=f"Plan not found: {plan_type}"
         )
 
-    logger.info(f"Updated plan {plan_type} by user {current_user.user_id}: {update_data.keys()}")
+    logger.info(f"Updated plan {plan_type} by user {current_user.id}: {update_data.keys()}")
 
     return PlanPricingAdminResponse(**plan)

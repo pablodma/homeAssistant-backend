@@ -114,7 +114,7 @@ async def create_coupon(
     try:
         return await service.create_coupon(
             data=request,
-            created_by=current_user.user_id,
+            created_by=current_user.id,
         )
     except ValueError as e:
         raise HTTPException(
