@@ -1,6 +1,10 @@
 """Application settings loaded from environment variables."""
 
+import json
 from functools import lru_cache
+from typing import Any
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,8 +39,26 @@ class Settings(BaseSettings):
     calendar_oauth_success_url: str = "http://localhost:3000/calendar/connected"
     calendar_oauth_error_url: str = "http://localhost:3000/calendar/error"
 
-    # CORS
+    # CORS - accepts JSON array or comma-separated string
     cors_origins: list[str] = ["http://localhost:3000"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> list[str]:
+        """Parse CORS origins from JSON array or comma-separated string."""
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            # Try JSON first
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+            # Fall back to comma-separated
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return ["http://localhost:3000"]
 
     # External Services
     openai_api_key: str = ""
