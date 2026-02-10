@@ -108,6 +108,27 @@ async def compare_plans(
 
 
 # =============================================================================
+# Services catalog (for plan configurator)
+# =============================================================================
+
+SERVICES_CATALOG = [
+    {"id": "reminder", "name": "Recordatorios"},
+    {"id": "shopping", "name": "Listas de compras"},
+    {"id": "finance", "name": "Presupuesto y Gastos"},
+    {"id": "calendar", "name": "Calendario"},
+    {"id": "vehicle", "name": "Gestión de Vehículos"},
+]
+
+services_admin_router = APIRouter(prefix="/admin/services", tags=["Admin - Services"])
+
+
+@services_admin_router.get("")
+async def get_services() -> list[dict[str, str]]:
+    """Get catalog of available services for plan configurator."""
+    return SERVICES_CATALOG
+
+
+# =============================================================================
 # Admin endpoints
 # =============================================================================
 

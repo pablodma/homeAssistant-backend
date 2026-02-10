@@ -1,7 +1,8 @@
-"""Run database migration."""
+"""Run database migration. Usage: python run_migration.py [008_plan_services|007_subscriptions_coupons_pricing]"""
 import asyncio
 import os
 import re
+import sys
 
 import asyncpg
 
@@ -47,10 +48,10 @@ async def run_migration():
         print("ERROR: DATABASE_URL not set")
         return
 
-    # Read migration file
-    migration_path = os.path.join(
-        os.path.dirname(__file__), "db", "007_subscriptions_coupons_pricing.sql"
-    )
+    # Read migration file: python run_migration.py 008_plan_services
+    migration_arg = sys.argv[1] if len(sys.argv) > 1 else "007_subscriptions_coupons_pricing"
+    migration_file = f"{migration_arg}.sql" if not migration_arg.endswith(".sql") else migration_arg
+    migration_path = os.path.join(os.path.dirname(__file__), "db", migration_file)
     
     with open(migration_path, "r", encoding="utf-8") as f:
         sql = f.read()

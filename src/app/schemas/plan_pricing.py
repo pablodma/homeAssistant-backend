@@ -32,6 +32,7 @@ class PlanPricingBase(BaseModel):
     max_messages_month: int | None = Field(None, ge=1)  # None = unlimited
     history_days: int = Field(..., ge=1)
     features: list[str] = Field(default_factory=list)
+    enabled_services: list[str] = Field(default_factory=list)
 
 
 class PlanPricingUpdate(BaseModel):
@@ -45,6 +46,7 @@ class PlanPricingUpdate(BaseModel):
     max_messages_month: int | None = None  # None = unlimited
     history_days: int | None = Field(None, ge=1)
     features: list[str] | None = None
+    enabled_services: list[str] | None = None
 
 
 class PlanPricingResponse(BaseSchema):
@@ -60,6 +62,7 @@ class PlanPricingResponse(BaseSchema):
     max_messages_month: int | None
     history_days: int
     features: list[str]
+    enabled_services: list[str]
     active: bool
 
     @property

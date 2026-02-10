@@ -14,6 +14,12 @@ def _parse_plan_row(row: dict[str, Any]) -> dict[str, Any]:
         features = row["features"]
         if isinstance(features, str):
             row["features"] = json.loads(features)
+    if row:
+        svc = row.get("enabled_services")
+        if svc is None or "enabled_services" not in row:
+            row["enabled_services"] = []
+        elif isinstance(svc, str):
+            row["enabled_services"] = json.loads(svc)
     return row
 
 
@@ -79,6 +85,7 @@ async def update_plan_pricing(
     max_messages_month: int | None = None,
     history_days: int | None = None,
     features: list[str] | None = None,
+    enabled_services: list[str] | None = None,
 ) -> dict[str, Any] | None:
     """
     Update plan pricing.
@@ -130,8 +137,12 @@ async def update_plan_pricing(
 
     if features is not None:
         fields.append(f"features = ${idx}")
-        # Serialize list to JSON string for JSONB column
         values.append(json.dumps(features))
+        idx += 1
+
+    if enabled_services is not None:
+        fields.append(f"enabled_services = ${idx}")
+        values.append(json.dumps(enabled_services))
         idx += 1
 
     values.append(plan_type)

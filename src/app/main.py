@@ -80,6 +80,7 @@ def create_app() -> FastAPI:
     # Plans (public & admin)
     app.include_router(plans.router, prefix="/api/v1")
     app.include_router(plans.admin_router, prefix="/api/v1")
+    app.include_router(plans.services_admin_router, prefix="/api/v1")
     
     # Coupons (public & admin)
     app.include_router(coupons.router, prefix="/api/v1")
