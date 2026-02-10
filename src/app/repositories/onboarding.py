@@ -214,14 +214,16 @@ class OnboardingRepository:
         """Create default budget categories for a new tenant."""
         pool = await get_pool()
         
+        # Categorías base con presupuesto $0 (sin límite inicial)
+        # El usuario puede configurar límites después
         categories = [
-            ("Supermercado", 50000, 80),
-            ("Transporte", 20000, 80),
-            ("Entretenimiento", 15000, 80),
-            ("Servicios", 30000, 90),
-            ("Salud", 10000, 80),
-            ("Educación", 15000, 80),
-            ("Otros", 10000, 80),
+            ("Supermercado", 0, 80),
+            ("Transporte", 0, 80),
+            ("Servicios", 0, 80),
+            ("Entretenimiento", 0, 80),
+            ("Salud", 0, 80),
+            ("Educación", 0, 80),
+            ("Otros", 0, 80),
         ]
         
         query = """
