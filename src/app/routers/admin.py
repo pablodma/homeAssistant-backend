@@ -63,22 +63,37 @@ async def list_agents(
 async def get_agent_prompt(
     tenant_id: UUID,
     agent_name: str,
-    service: AdminService = Depends(get_admin_service),
     _: CurrentUser = Depends(get_current_user),
 ) -> AgentPromptWithDefault:
     """Get the active prompt for an agent.
 
-    Returns the current active prompt content and metadata,
-    along with the default prompt for reference.
+    Reads from GitHub API (repo homeai-assis). Single source of truth.
+    Falls back to local files when GitHub is not configured (dev).
     """
-    custom_prompt = await service.get_prompt(str(tenant_id), agent_name)
-    default_prompt = get_default_prompt(agent_name)
-    
+    github = GitHubService()
+
+    if github.is_configured:
+        try:
+            prompt_content = await github.get_prompt(agent_name)
+            return AgentPromptWithDefault(
+                agent_name=agent_name,
+                custom_prompt=None,
+                default_prompt=prompt_content,
+                is_using_default=True,
+            )
+        except GitHubServiceError as e:
+            raise HTTPException(
+                status_code=e.status_code or 500,
+                detail={"error": "Failed to get prompt", "message": e.message},
+            )
+
+    # Fallback for local dev when GITHUB_TOKEN not set
+    prompt_content = get_default_prompt(agent_name)
     return AgentPromptWithDefault(
         agent_name=agent_name,
-        custom_prompt=custom_prompt,
-        default_prompt=default_prompt,
-        is_using_default=custom_prompt is None,
+        custom_prompt=None,
+        default_prompt=prompt_content,
+        is_using_default=True,
     )
 
 
@@ -136,15 +151,14 @@ async def get_prompt_history(
     tenant_id: UUID,
     agent_name: str,
     limit: int = Query(10, ge=1, le=50),
-    service: AdminService = Depends(get_admin_service),
     _: CurrentUser = Depends(get_current_user),
 ) -> list[AgentPromptHistory]:
     """Get version history for an agent's prompt.
 
-    Returns the last N versions of the prompt with metadata.
+    DEPRECATED: Tabla agent_prompts deprecada. Historial disponible en GitHub.
+    Returns empty list. Use GitHub commit history for version tracking.
     """
-    history = await service.get_prompt_history(str(tenant_id), agent_name, limit)
-    return [AgentPromptHistory(**h) for h in history]
+    return []
 
 
 # =====================================================

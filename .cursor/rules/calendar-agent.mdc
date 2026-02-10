@@ -9,59 +9,57 @@ globs:
 # Calendar Agent
 
 ## Descripción
-El Calendar Agent gestiona eventos del calendario con sincronización bidireccional a Google Calendar. Detecta eventos en conversaciones usando NLP (OpenAI).
+El Calendar Agent gestiona eventos del calendario con sincronización bidireccional a Google Calendar. Funciona como sub-agente dentro del bot homeai-assis, usando LLM + tools que llaman al backend.
 
-## Arquitectura
+## Arquitectura Actual
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                          n8n Workflow                            │
-│  ┌──────────┐    ┌──────────────┐    ┌───────────────────┐     │
-│  │ WhatsApp │───▶│ Orquestador  │───▶│ Calendar Agent   │     │
-│  │ Trigger  │    │    (LLM)     │    │  (HTTP Request)   │     │
-│  └──────────┘    └──────────────┘    └─────────┬─────────┘     │
-└────────────────────────────────────────────────│────────────────┘
-                                                 │
-                    ┌────────────────────────────▼────────────────┐
-                    │              FastAPI Backend                 │
-                    │  ┌────────────────────────────────────────┐ │
-                    │  │           Calendar Router               │ │
-                    │  │     /api/v1/tenants/{id}/agent/...      │ │
-                    │  └───────────────────┬────────────────────┘ │
-                    │                      │                       │
-                    │  ┌───────────────────▼────────────────────┐ │
-                    │  │          Calendar Service               │ │
-                    │  │  • Event CRUD                          │ │
-                    │  │  • Google Calendar sync                │ │
-                    │  │  • Event detection (NLP)               │ │
-                    │  └───────┬────────────────┬───────────────┘ │
-                    │          │                │                  │
-                    │  ┌───────▼───────┐ ┌──────▼───────────────┐ │
-                    │  │  Repository   │ │  Google Calendar     │ │
-                    │  │  (PostgreSQL) │ │  Service (API)       │ │
-                    │  └───────────────┘ └──────────────────────┘ │
-                    └─────────────────────────────────────────────┘
+│                    FLUJO DE MENSAJE                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Usuario (WhatsApp)                                              │
+│      │                                                           │
+│      ▼                                                           │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │   homeai-assis: Webhook → RouterAgent (LLM)               │   │
+│  │   Si intención = calendario → CalendarAgent               │   │
+│  └────────────────────────┬─────────────────────────────────┘   │
+│                           │                                      │
+│                           ▼                                      │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │   homeai-assis: CalendarAgent (LLM + tools)               │   │
+│  │   Tools: crear_evento, listar_eventos, modificar, etc.   │   │
+│  └────────────────────────┬─────────────────────────────────┘   │
+│                           │                                      │
+│                           │ HTTP (Bearer token)                   │
+│                           ▼                                      │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │   homeai-api: Calendar Router                             │   │
+│  │   /api/v1/tenants/{id}/agent/calendar/events              │   │
+│  └────────────────────────┬─────────────────────────────────┘   │
+│                           │                                      │
+│  ┌────────────────────────▼────────────────────────────────┐   │
+│  │   Calendar Service + Google Calendar sync                 │   │
+│  │   • Event CRUD en PostgreSQL                             │   │
+│  │   • Sincronización bidireccional Google                   │   │
+│  │   • Event detection (NLP) en event_detector.py            │   │
+│  └──────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Endpoints del Agent
-
-### Para n8n HTTP Request Tool
+## Endpoints del Backend (usados por CalendarAgent)
 
 | Endpoint | Método | Descripción |
 |----------|--------|-------------|
-| `/agent/calendar/event` | POST | Crear evento |
-| `/agent/calendar/events` | GET | Listar eventos |
-| `/agent/calendar/event/{id}` | PUT | Modificar evento |
-| `/agent/calendar/event/{id}` | DELETE | Eliminar evento |
-| `/agent/calendar/detect` | POST | Detectar evento en mensaje (NLP) |
-| `/agent/calendar/availability` | GET | Verificar disponibilidad |
-| `/agent/calendar/connection-status` | GET | Estado de Google Calendar |
-| `/agent/calendar/next` | GET | Próximo evento |
-
-### OAuth Callback
-| Endpoint | Método | Descripción |
-|----------|--------|-------------|
-| `/auth/google/callback` | GET | Callback de OAuth (sin tenant prefix) |
+| `/api/v1/tenants/{id}/agent/calendar/events` | POST | Crear evento |
+| `/api/v1/tenants/{id}/agent/calendar/events` | GET | Listar eventos |
+| `/api/v1/tenants/{id}/agent/calendar/events/{event_id}` | PUT | Modificar evento |
+| `/api/v1/tenants/{id}/agent/calendar/events/{event_id}` | DELETE | Eliminar evento |
+| `/api/v1/tenants/{id}/agent/calendar/detect` | POST | Detectar evento en mensaje (NLP) |
+| `/api/v1/tenants/{id}/agent/calendar/availability` | GET | Verificar disponibilidad |
+| `/api/v1/tenants/{id}/agent/calendar/connection-status` | GET | Estado de Google Calendar |
+| `/api/v1/tenants/{id}/agent/calendar/next` | GET | Próximo evento |
 
 ## Modelo de Datos
 
@@ -97,61 +95,6 @@ oauth_states (
 )
 ```
 
-## Flujo OAuth via WhatsApp
-
-```
-Usuario (WhatsApp)        n8n                 Backend               Google
-      │                    │                     │                     │
-      ├───"Conectar calendario"──▶               │                     │
-      │                    │                     │                     │
-      │                    ├───connection-status─▶                     │
-      │                    │                     │                     │
-      │    ◀──────────"Conectá tu cuenta: [URL]"─┤                     │
-      │                    │                     │                     │
-      ├────────────────────┼─────────────────────┼──────click URL──────▶
-      │                    │                     │                     │
-      │                    │                     │◀────callback code────┤
-      │                    │                     │                     │
-      │                    │                     ├───exchange token─────▶
-      │                    │                     │                     │
-      │                    │                     │◀───access/refresh────┤
-      │                    │                     │                     │
-      │                    │                     │ (guarda tokens)      │
-      │                    │                     │                     │
-      │    ◀─────────"✅ Calendario conectado!"──┤                     │
-```
-
-## Detección de Eventos (NLP)
-
-El servicio `event_detector.py` usa OpenAI GPT-4o-mini para:
-- Detectar eventos agendables en mensajes de usuario
-- Extraer: título, fecha, hora, ubicación, duración
-- Indicar nivel de confianza y campos faltantes
-
-### Ejemplo de uso
-
-```python
-# Request
-POST /agent/calendar/detect
-{
-    "message": "Tengo turno con el dentista mañana a las 10",
-    "user_phone": "+5491155551234"
-}
-
-# Response
-{
-    "detected": true,
-    "event_suggestion": {
-        "title": "Turno dentista",
-        "date": "2026-02-08",
-        "time": "10:00"
-    },
-    "confidence": 0.92,
-    "needs_confirmation": true,
-    "message": "📅 Detecté un evento: 'Turno dentista'\n📆 Mañana a las 10:00\n\n¿Querés que lo agende?"
-}
-```
-
 ## Sincronización Google Calendar
 
 ### Crear evento con sync
@@ -185,73 +128,17 @@ GOOGLE_REDIRECT_URI=https://api.example.com/api/v1/auth/google/callback
 CALENDAR_OAUTH_SUCCESS_URL=https://app.example.com/calendar/connected
 CALENDAR_OAUTH_ERROR_URL=https://app.example.com/calendar/error
 
-# OpenAI (para detección NLP)
+# OpenAI (para detección NLP en event_detector)
 OPENAI_API_KEY=sk-xxx
 ```
 
-## Configuración n8n
+## Ubicación del Código
 
-### Tool: Crear Evento
-
-```
-Name: crear_evento
-Description: Crear un nuevo evento en el calendario
-Method: POST
-URL: {{$vars.API_URL}}/api/v1/tenants/{{$vars.TENANT_ID}}/agent/calendar/event
-Authentication: Bearer Token
-Body (JSON):
-{
-    "title": "{title}",
-    "date": "{date}",
-    "time": "{time}",
-    "duration_minutes": {duration},
-    "location": "{location}",
-    "user_phone": "{{$json.user_phone}}"
-}
-```
-
-### Tool: Listar Eventos
-
-```
-Name: listar_eventos
-Description: Ver eventos del calendario
-Method: GET
-URL: {{$vars.API_URL}}/api/v1/tenants/{{$vars.TENANT_ID}}/agent/calendar/events
-Query Parameters:
-- date: {date}
-- user_phone: {{$json.user_phone}}
-```
-
-### Tool: Detectar Evento
-
-```
-Name: detectar_evento
-Description: Detectar si un mensaje contiene un evento agendable
-Method: POST
-URL: {{$vars.API_URL}}/api/v1/tenants/{{$vars.TENANT_ID}}/agent/calendar/detect
-Body:
-{
-    "message": "{message}",
-    "user_phone": "{{$json.user_phone}}"
-}
-```
-
-## Pruebas con curl
-
-```bash
-# Crear evento
-curl -X POST "https://api.example.com/api/v1/tenants/{tenant_id}/agent/calendar/event" \
-  -H "Authorization: Bearer {token}" \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Reunión", "date": "2026-02-10", "time": "14:00"}'
-
-# Listar eventos
-curl "https://api.example.com/api/v1/tenants/{tenant_id}/agent/calendar/events?date=2026-02-10" \
-  -H "Authorization: Bearer {token}"
-
-# Detectar evento
-curl -X POST "https://api.example.com/api/v1/tenants/{tenant_id}/agent/calendar/detect" \
-  -H "Authorization: Bearer {token}" \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Mañana tengo turno con el médico a las 9", "user_phone": "+5491155551234"}'
-```
+| Componente | Ubicación |
+|------------|-----------|
+| CalendarAgent (LLM + tools) | homeai-assis/src/app/agents/calendar.py |
+| Prompt del agente | homeai-assis/docs/prompts/calendar-agent.md |
+| Backend endpoints | homeai-api/routers/calendar.py |
+| Calendar Service | homeai-api/services/ |
+| Event Detector (NLP) | homeai-api/services/event_detector.py |
+| Google Calendar sync | homeai-api/services/google_calendar.py |

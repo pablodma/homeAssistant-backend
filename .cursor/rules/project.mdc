@@ -106,7 +106,7 @@ homeai-api/
 ├── scripts/db/           # SQL migrations
 ├── tests/
 ├── docs/
-│   └── prompts/          # Agent prompts de referencia
+│   └── prompts/          # Copia de referencia local (fallback dev). Fuente: homeai-assis
 ├── .cursor/rules/        # Cursor rules
 ├── Dockerfile
 └── pyproject.toml
@@ -153,8 +153,9 @@ homeai-api/
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
 | GET | `/api/v1/tenants/{id}/admin/agents` | Lista agentes |
-| GET | `/api/v1/tenants/{id}/admin/agents/{name}/prompt` | Obtener prompt |
-| PUT | `/api/v1/tenants/{id}/admin/agents/{name}/prompt` | Actualizar prompt |
+| GET | `/api/v1/tenants/{id}/admin/agents/{name}/prompt` | Obtener prompt (vía GitHub API - repo homeai-assis) |
+| PUT | `/api/v1/tenants/{id}/admin/agents/{name}/prompt` | Actualizar prompt (commit a GitHub → redeploy Railway) |
+| GET | `/api/v1/tenants/{id}/admin/agents/{name}/prompt/history` | Historial (deprecado, retorna []) |
 | GET | `/api/v1/tenants/{id}/admin/interactions` | Lista interacciones |
 | GET | `/api/v1/tenants/{id}/admin/interactions/{id}` | Detalle interacción |
 | GET | `/api/v1/tenants/{id}/admin/stats` | Estadísticas |
@@ -171,7 +172,7 @@ homeai-api/
 | `budgets` | Backend | Presupuestos mensuales |
 | `events` | Backend | Eventos de calendario |
 | `google_calendar_credentials` | Backend | OAuth tokens Google |
-| `agent_prompts` | Backend | Prompts editables (versionados) |
+| `agent_prompts` | Backend | **DEPRECADA** - Prompts viven en homeai-assis/docs/prompts/ (fuente de verdad). Admin lee/escribe vía GitHub API |
 | `agent_interactions` | Bot | Log de interacciones |
 | `chat_sessions` | Bot | Sesiones de chat |
 | `chat_messages` | Bot | Mensajes de chat |
@@ -197,6 +198,9 @@ Ubicación: `scripts/db/`
 | `GOOGLE_CLIENT_ID` | OAuth Google | ✅ |
 | `GOOGLE_CLIENT_SECRET` | OAuth Google | ✅ |
 | `FRONTEND_URL` | URL del frontend | ✅ |
+| `GITHUB_TOKEN` | Token para Admin GET/PUT prompts (repo homeai-assis) | Admin |
+| `GITHUB_REPO` | owner/repo (default: pablodma/homeAssistant-asistant) | Admin |
+| `GITHUB_BRANCH` | Branch (default: master) | Admin |
 | `PORT` | Puerto (Railway lo setea) | Auto |
 
 ## Debugging con Railway MCP

@@ -12,6 +12,7 @@ from ..schemas.admin import (
     AgentPromptResponse,
     InteractionListResponse,
     InteractionResponse,
+    PROMPT_FILES,
     QualityIssueCounts,
     QualityIssueListResponse,
     QualityIssueResponse,
@@ -32,21 +33,20 @@ class AdminService:
     # =====================================================
 
     async def get_agents(self, tenant_id: str) -> list[AgentInfo]:
-        """Get list of all agents with their status."""
-        # Get prompts from database
-        prompts = await self.repo.get_prompts(tenant_id)
-        prompt_map = {p["agent_name"]: p for p in prompts}
+        """Get list of all agents with their status.
 
-        # Merge with definitions
+        Prompts live in homeai-assis/docs/prompts/ (source of truth).
+        has_prompt indicates agent has prompt file in repo.
+        """
         agents = []
         for agent_def in AGENT_DEFINITIONS:
             agent = AgentInfo(
                 name=agent_def.name,
                 display_name=agent_def.display_name,
                 description=agent_def.description,
-                has_prompt=agent_def.name in prompt_map,
+                has_prompt=agent_def.name in PROMPT_FILES,
                 is_active=True,
-                last_updated=prompt_map.get(agent_def.name, {}).get("updated_at"),
+                last_updated=None,  # Deprecated: was from agent_prompts DB
             )
             agents.append(agent)
 
