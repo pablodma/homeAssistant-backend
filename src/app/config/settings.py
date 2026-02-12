@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     mp_webhook_secret: str = ""  # Para validar firma de webhooks (opcional)
     mp_sandbox: bool = True  # True para ambiente de pruebas
 
+    # Anthropic (Claude) - QA Reviewer
+    anthropic_api_key: str = ""  # API key for Claude
+    qa_review_model: str = "claude-sonnet-4-20250514"  # Claude model for QA reviews
+    qa_review_max_improvements: int = 3  # Max prompts to modify per review cycle
+    qa_review_cooldown_hours: int = 24  # Hours before same agent prompt can be modified again
+    qa_review_min_issues: int = 2  # Minimum issues to trigger improvement for an agent
+
     @property
     def cors_origins(self) -> list[str]:
         """Parse CORS origins from string (JSON array, comma-separated, or bracketed)."""

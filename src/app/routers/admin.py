@@ -15,17 +15,23 @@ from ..schemas.admin import (
     AgentPromptWithDefault,
     InteractionListResponse,
     InteractionResponse,
+    PromptRevisionItem,
     PromptUpdateResponse,
+    QAReviewHistoryItem,
+    QAReviewRequest,
+    QAReviewResponse,
     QualityIssueCounts,
     QualityIssueListResponse,
     QualityIssueResolve,
     QualityIssueResponse,
+    RollbackResponse,
     StatsResponse,
     get_default_prompt,
 )
 from ..schemas.auth import CurrentUser
 from ..services.admin import AdminService
 from ..services.github import GitHubService, GitHubServiceError
+from ..services.qa_reviewer import QABatchReviewer
 
 router = APIRouter(prefix="/tenants/{tenant_id}/admin", tags=["Admin"])
 
@@ -335,3 +341,109 @@ async def resolve_quality_issue(
     if not issue:
         raise HTTPException(status_code=404, detail="Quality issue not found")
     return issue
+
+
+# =====================================================
+# QA REVIEW (Batch analysis & prompt improvement)
+# =====================================================
+
+
+@router.post("/qa-review", response_model=QAReviewResponse)
+async def trigger_qa_review(
+    tenant_id: UUID,
+    body: QAReviewRequest,
+    user: CurrentUser = Depends(get_current_user),
+) -> QAReviewResponse:
+    """Trigger a QA batch review.
+
+    Analyzes unresolved quality issues using Claude and automatically
+    improves agent prompts based on detected patterns.
+
+    This operation may take 30-60 seconds depending on the number of issues.
+    """
+    reviewer = QABatchReviewer()
+
+    try:
+        result = await reviewer.run_review(
+            tenant_id=str(tenant_id),
+            triggered_by=user.email or "admin",
+            days=body.days,
+        )
+
+        revisions = [
+            PromptRevisionItem(**rev) for rev in result.get("revisions", [])
+        ]
+
+        return QAReviewResponse(
+            cycle_id=result["cycle_id"],
+            status=result["status"],
+            issues_analyzed=result["issues_analyzed"],
+            improvements_applied=result["improvements_applied"],
+            analysis=result.get("analysis"),
+            revisions=revisions,
+            message=result.get("message"),
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "QA review failed", "message": str(e)},
+        )
+
+
+@router.get("/qa-review/history", response_model=list[QAReviewHistoryItem])
+async def get_qa_review_history(
+    tenant_id: UUID,
+    limit: int = Query(20, ge=1, le=100),
+    user: CurrentUser = Depends(get_current_user),
+) -> list[QAReviewHistoryItem]:
+    """Get history of QA review cycles.
+
+    Returns past review executions with their results and applied revisions.
+    """
+    reviewer = QABatchReviewer()
+
+    try:
+        history = await reviewer.get_review_history(
+            tenant_id=str(tenant_id),
+            limit=limit,
+        )
+        return [QAReviewHistoryItem(**item) for item in history]
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Failed to get review history", "message": str(e)},
+        )
+
+
+@router.post("/qa-review/rollback/{revision_id}", response_model=RollbackResponse)
+async def rollback_prompt_revision(
+    tenant_id: UUID,
+    revision_id: UUID,
+    user: CurrentUser = Depends(get_current_user),
+) -> RollbackResponse:
+    """Rollback a prompt revision.
+
+    Restores the original prompt content before the QA review modification.
+    Creates a new GitHub commit with the restored content.
+    """
+    reviewer = QABatchReviewer()
+
+    try:
+        result = await reviewer.rollback_revision(
+            tenant_id=str(tenant_id),
+            revision_id=str(revision_id),
+            rolled_back_by=user.email or "admin",
+        )
+        return RollbackResponse(**result)
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Rollback failed", "message": str(e)},
+        )

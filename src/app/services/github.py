@@ -28,6 +28,7 @@ PROMPT_FILE_PATHS = {
     "shopping": "docs/prompts/shopping-agent.md",
     "vehicle": "docs/prompts/vehicle-agent.md",
     "qa": "docs/prompts/qa-agent.md",
+    "qa-reviewer": "docs/prompts/qa-reviewer-agent.md",
 }
 
 

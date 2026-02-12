@@ -23,6 +23,8 @@ dependencies = [
     "pytz>=2024.1",
     # Mercado Pago SDK
     "mercadopago>=2.2.0",
+    # Anthropic SDK for Claude (QA Reviewer)
+    "anthropic>=0.40.0",
 ]
 
 [project.optional-dependencies]

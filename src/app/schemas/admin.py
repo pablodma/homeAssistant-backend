@@ -242,6 +242,13 @@ AGENT_DEFINITIONS = [
         has_prompt=False,
         is_active=True,
     ),
+    AgentInfo(
+        name="qa-reviewer",
+        display_name="QA Reviewer (Mejora Continua)",
+        description="Analiza issues acumulados y propone mejoras en prompts de agentes",
+        has_prompt=False,
+        is_active=True,
+    ),
 ]
 
 
@@ -255,6 +262,7 @@ PROMPT_FILES = {
     "shopping": "shopping-agent.md",
     "vehicle": "vehicle-agent.md",
     "qa": "qa-agent.md",
+    "qa-reviewer": "qa-reviewer-agent.md",
 }
 
 
@@ -377,3 +385,64 @@ class QualityIssueCounts(BaseSchema):
     unresolved: int
     by_category: dict[str, int]
     by_severity: dict[str, int]
+
+
+# =====================================================
+# QA REVIEW
+# =====================================================
+
+
+class QAReviewRequest(BaseSchema):
+    """Request to trigger a QA review."""
+
+    days: int = Field(30, ge=1, le=365, description="How many days back to analyze")
+
+
+class PromptRevisionItem(BaseSchema):
+    """A single prompt revision from a review cycle."""
+
+    revision_id: str
+    agent_name: str
+    improvement_reason: str
+    changes_summary: list[dict[str, Any]] = []
+    confidence: float = 0.0
+    github_commit_sha: str = ""
+    github_commit_url: str = ""
+    is_rolled_back: bool = False
+
+
+class QAReviewResponse(BaseSchema):
+    """Response from a QA review execution."""
+
+    cycle_id: str
+    status: str  # 'completed', 'failed'
+    issues_analyzed: int
+    improvements_applied: int
+    analysis: Optional[dict[str, Any]] = None  # parsed XML sections
+    revisions: list[PromptRevisionItem] = []
+    message: Optional[str] = None
+
+
+class QAReviewHistoryItem(BaseSchema):
+    """Summary of a past QA review cycle."""
+
+    id: UUID
+    triggered_by: str
+    period_start: datetime
+    period_end: datetime
+    issues_analyzed_count: int
+    improvements_applied_count: int
+    status: str
+    error_message: Optional[str] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    revisions: list[dict[str, Any]] = []
+
+
+class RollbackResponse(BaseSchema):
+    """Response from rolling back a prompt revision."""
+
+    revision_id: str
+    agent_name: str
+    commit_sha: str
+    commit_url: str
