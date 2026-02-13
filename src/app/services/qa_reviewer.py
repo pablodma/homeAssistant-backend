@@ -318,22 +318,7 @@ class QABatchReviewer:
             limit,
         )
 
-        results = []
-        for row in rows:
-            item = dict(row)
-            # asyncpg returns PostgreSQL json type as raw string, not Python objects.
-            # Parse it manually so Pydantic can validate list[dict[str, Any]].
-            revisions_raw = item.get("revisions")
-            if isinstance(revisions_raw, str):
-                try:
-                    item["revisions"] = json.loads(revisions_raw)
-                except (json.JSONDecodeError, TypeError):
-                    item["revisions"] = []
-            elif revisions_raw is None:
-                item["revisions"] = []
-            results.append(item)
-
-        return results
+        return [dict(row) for row in rows]
 
     # =====================================================
     # PRIVATE METHODS
