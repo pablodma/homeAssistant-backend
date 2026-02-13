@@ -436,6 +436,7 @@ class QAReviewHistoryItem(BaseSchema):
     error_message: Optional[str] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
+    analysis_result: Optional[dict[str, Any]] = None
     revisions: list[dict[str, Any]] = []
 
 

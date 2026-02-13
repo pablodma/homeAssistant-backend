@@ -294,6 +294,7 @@ class QABatchReviewer:
                 c.id, c.triggered_by, c.period_start, c.period_end,
                 c.issues_analyzed_count, c.improvements_applied_count,
                 c.status, c.error_message, c.created_at, c.completed_at,
+                c.analysis_result,
                 COALESCE(
                     json_agg(
                         json_build_object(
@@ -472,13 +473,33 @@ class QABatchReviewer:
         return response.content[0].text
 
     def _parse_xml_response(self, response: str) -> dict[str, Any]:
-        """Parse Claude's XML-tagged response into structured data."""
+        """Parse Claude's XML-tagged response into structured data.
+
+        Supports both the original 4-section format and the extended format
+        with automated_fixes, code_patches, strategic_improvements, etc.
+        """
         sections = {}
 
-        for tag in ["understanding_errors", "hard_errors", "improvement_proposals", "summary"]:
+        all_tags = [
+            # Original sections
+            "understanding_errors",
+            "hard_errors",
+            "improvement_proposals",
+            "summary",
+            # Extended sections (v2 prompt)
+            "automated_fixes",
+            "code_patches",
+            "strategic_improvements",
+            "process_improvements",
+            "implementation_roadmap",
+            "executive_summary",
+        ]
+
+        for tag in all_tags:
             pattern = rf"<{tag}>(.*?)</{tag}>"
             match = re.search(pattern, response, re.DOTALL)
-            sections[tag] = match.group(1).strip() if match else ""
+            if match:
+                sections[tag] = match.group(1).strip()
 
         return sections
 
