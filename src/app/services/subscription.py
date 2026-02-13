@@ -1,12 +1,11 @@
 """Subscription service for business logic and Mercado Pago integration."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
 from ..config.mercadopago import get_mp_client
-from ..config.settings import get_settings
 from ..repositories import coupon_repo, plan_pricing_repo, subscription_repo
 from ..schemas.subscription import (
     SubscriptionCreateResponse,
@@ -23,7 +22,6 @@ class SubscriptionService:
 
     def __init__(self) -> None:
         self.mp_client = get_mp_client()
-        self.settings = get_settings()
 
     async def create_subscription(
         self,
@@ -86,28 +84,25 @@ class SubscriptionService:
 
         checkout_url = None
 
-        # Create MP subscription if configured
+        # Create MP subscription (inline preapproval) if configured
         if self.mp_client.is_configured:
-            # Get or create MP plan
-            mp_plan = await self._get_or_create_mp_plan(plan)
+            preapproval = self.mp_client.create_subscription(
+                reason=f"HomeAI {plan['name']}",
+                price=float(final_price),
+                payer_email=payer_email,
+                external_reference=str(subscription["id"]),
+                currency=plan.get("currency", "ARS"),
+                back_url=back_url,
+            )
 
-            if mp_plan:
-                # Create preapproval (subscription) in MP
-                preapproval = self.mp_client.create_preapproval(
-                    plan_id=mp_plan["mp_plan_id"],
-                    payer_email=payer_email,
-                    external_reference=str(subscription["id"]),
-                    back_url=back_url,
+            if preapproval:
+                # Update subscription with MP data
+                await subscription_repo.update_subscription(
+                    subscription_id=subscription["id"],
+                    mp_preapproval_id=preapproval["id"],
+                    mp_payer_id=preapproval.get("payer_id"),
                 )
-
-                if preapproval:
-                    # Update subscription with MP data
-                    await subscription_repo.update_subscription(
-                        subscription_id=subscription["id"],
-                        mp_preapproval_id=preapproval["id"],
-                        mp_payer_id=preapproval.get("payer_id"),
-                    )
-                    checkout_url = preapproval.get("init_point")
+                checkout_url = preapproval.get("init_point")
 
         # Register coupon redemption if used
         if coupon_id and coupon_code:
@@ -128,42 +123,6 @@ class SubscriptionService:
             final_price=final_price,
             plan_type=plan_type,
         )
-
-    async def _get_or_create_mp_plan(
-        self,
-        plan: dict,
-    ) -> dict | None:
-        """Get existing MP plan or create new one."""
-        # Check if we have a cached plan with same price
-        mp_plan = await subscription_repo.get_mp_plan_by_pricing(plan["id"])
-
-        if mp_plan and mp_plan["synced_price"] == plan["price_monthly"]:
-            return mp_plan
-
-        # Create new plan in MP
-        result = self.mp_client.create_preapproval_plan(
-            plan_type=plan["plan_type"],
-            price=float(plan["price_monthly"]),
-            currency=plan["currency"],
-            reason=f"HomeAI {plan['name']}",
-        )
-
-        if result:
-            # Mark old plans as inactive
-            if mp_plan:
-                await subscription_repo.update_mp_plan_status(
-                    mp_plan["mp_plan_id"],
-                    "inactive"
-                )
-
-            # Save new plan
-            return await subscription_repo.create_mp_plan(
-                plan_pricing_id=plan["id"],
-                mp_plan_id=result["id"],
-                synced_price=Decimal(str(plan["price_monthly"])),
-            )
-
-        return mp_plan  # Return existing plan if creation failed
 
     async def get_subscription_status(
         self,

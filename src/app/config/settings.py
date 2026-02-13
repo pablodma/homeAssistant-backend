@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     github_repo: str = "pablodma/homeAssistant-asistant"  # owner/repo
     github_branch: str = "master"
 
+    # Frontend URL (para redirects de Mercado Pago)
+    frontend_url: str = "http://localhost:3000"
+
     # Mercado Pago
     mp_access_token: str = ""  # Token privado de MP
     mp_public_key: str = ""  # Clave publica para frontend

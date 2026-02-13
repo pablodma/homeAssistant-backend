@@ -21,6 +21,7 @@ class MercadoPagoClient:
         self._public_key = settings.mp_public_key
         self._webhook_secret = settings.mp_webhook_secret
         self._sandbox = settings.mp_sandbox
+        self._frontend_url = settings.frontend_url
         
         if not self._access_token:
             logger.warning("MP_ACCESS_TOKEN not configured - Mercado Pago features disabled")
@@ -54,95 +55,66 @@ class MercadoPagoClient:
         """Check if Mercado Pago is properly configured."""
         return self._sdk is not None
 
-    def create_preapproval_plan(
+    def create_subscription(
         self,
-        plan_type: str,
+        reason: str,
         price: float,
+        payer_email: str,
+        external_reference: str,
         currency: str = "ARS",
-        reason: str = "HomeAI Subscription",
+        back_url: str | None = None,
     ) -> dict[str, Any] | None:
         """
-        Create a subscription plan in Mercado Pago.
+        Create an inline subscription (preapproval) in Mercado Pago.
+        
+        Uses inline preapproval creation (without pre-created plan) which is
+        the supported approach in mercadopago SDK v2.
         
         Args:
-            plan_type: Plan identifier (family, premium)
-            price: Monthly price
-            currency: Currency code (default: ARS)
             reason: Description of the subscription
+            price: Monthly price
+            payer_email: Payer's email
+            external_reference: Our internal reference (subscription_id)
+            currency: Currency code (default: ARS)
+            back_url: URL to redirect after payment
             
         Returns:
-            MP response dict with plan_id or None on error
+            MP response dict with init_point URL or None on error
         """
         if not self._sdk:
-            logger.error("Cannot create plan: MP SDK not configured")
+            logger.error("Cannot create subscription: MP SDK not configured")
             return None
 
-        plan_data = {
-            "reason": f"{reason} - {plan_type.title()}",
+        redirect_url = back_url or f"{self._frontend_url}/checkout/callback"
+
+        preapproval_data = {
+            "reason": reason,
             "auto_recurring": {
                 "frequency": 1,
                 "frequency_type": "months",
                 "transaction_amount": price,
                 "currency_id": currency,
             },
-            "back_url": f"https://homeai.app/checkout/callback",
-        }
-
-        try:
-            result = self._sdk.preapproval_plan().create(plan_data)
-            if result["status"] == 201:
-                logger.info(f"Created MP plan: {result['response']['id']}")
-                return result["response"]
-            else:
-                logger.error(f"Failed to create MP plan: {result}")
-                return None
-        except Exception as e:
-            logger.exception(f"Error creating MP plan: {e}")
-            return None
-
-    def create_preapproval(
-        self,
-        plan_id: str,
-        payer_email: str,
-        external_reference: str,
-        back_url: str | None = None,
-    ) -> dict[str, Any] | None:
-        """
-        Create a subscription (preapproval) for a payer.
-        
-        Args:
-            plan_id: The MP plan ID
-            payer_email: Payer's email
-            external_reference: Our internal reference (tenant_id)
-            back_url: URL to redirect after payment
-            
-        Returns:
-            MP response with init_point URL or None on error
-        """
-        if not self._sdk:
-            logger.error("Cannot create preapproval: MP SDK not configured")
-            return None
-
-        preapproval_data = {
-            "preapproval_plan_id": plan_id,
             "payer_email": payer_email,
             "external_reference": external_reference,
+            "back_url": redirect_url,
             "status": "pending",
         }
-        
-        if back_url:
-            preapproval_data["back_url"] = back_url
 
         try:
             result = self._sdk.preapproval().create(preapproval_data)
             if result["status"] == 201:
-                logger.info(f"Created MP preapproval: {result['response']['id']}")
-                return result["response"]
+                response = result["response"]
+                logger.info(
+                    f"Created MP subscription: id={response['id']}, "
+                    f"init_point={response.get('init_point')}"
+                )
+                return response
             else:
-                logger.error(f"Failed to create MP preapproval: {result}")
+                logger.error(f"Failed to create MP subscription: status={result['status']}, response={result}")
                 return None
         except Exception as e:
-            logger.exception(f"Error creating MP preapproval: {e}")
+            logger.exception(f"Error creating MP subscription: {e}")
             return None
 
     def get_preapproval(self, preapproval_id: str) -> dict[str, Any] | None:
