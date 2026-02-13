@@ -7,19 +7,27 @@ HomeAI Assistant es un asistente virtual multi-tenant que procesa mensajes de Wh
 ### Componentes
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  WhatsApp   │────▶│    n8n      │────▶│   OpenAI    │     │  PostgreSQL │
-│  Business   │◀────│  Workflows  │◀────│   GPT-4o    │     │   Railway   │
-│    API      │     │             │────▶│             │     │             │
-└─────────────┘     └──────┬──────┘     └─────────────┘     └──────▲──────┘
-                          │                                        │
-                          └────────────────────────────────────────┘
+┌─────────────┐     ┌──────────────────┐     ┌─────────────┐     ┌─────────────┐
+│  WhatsApp   │────▶│   homeai-assis   │────▶│   OpenAI    │     │  PostgreSQL │
+│  Business   │◀────│  FastAPI +       │◀────│   GPT-4o    │     │   Railway   │
+│    API      │     │  LangChain       │────▶│             │     │             │
+└─────────────┘     └──────┬───────────┘     └─────────────┘     └──────▲──────┘
+                           │                                           │
+┌─────────────┐     ┌──────┴───────────┐     ┌─────────────┐          │
+│  homeai-web │────▶│   homeai-api     │────▶│ Mercado Pago│          │
+│  (Vercel)   │     │  FastAPI         │     │ (Payments)  │          │
+└─────────────┘     └──────────────────┘─────┘─────────────┘──────────┘
+                           ▲
+┌─────────────┐            │
+│ homeai-admin│────────────┘
+│  (Vercel)   │
+└─────────────┘
 ```
 
 ### Actores
-- **Usuarios finales**: Interactúan via WhatsApp
-- **Administradores**: Configuran via Web (futuro)
-- **Sistema**: n8n, OpenAI, PostgreSQL
+- **Usuarios finales**: Interactúan via WhatsApp y web
+- **Administradores**: Configuran via homeai-admin (prompts, pricing, cupones)
+- **Sistema**: homeai-assis, homeai-api, OpenAI, PostgreSQL, Mercado Pago
 - **Atacantes potenciales**: Externos, usuarios maliciosos, tenants maliciosos
 
 ---
@@ -143,7 +151,7 @@ SELECT * FROM expenses WHERE description = $1
 **Mitigación**:
 - Rate limiting por usuario/tenant
 - Queue con backpressure
-- Timeout en workflows de n8n
+- Timeout en agentes de homeai-assis
 - Monitoreo de uso anómalo
 
 #### T5.2: Operaciones costosas
@@ -176,6 +184,25 @@ SELECT * FROM expenses WHERE description = $1
 - Chat no tiene tools administrativas
 - Separar claramente tools de usuario vs admin
 
+#### T6.3: Bypass de pago
+**Descripción**: Usuario accede a funcionalidades premium sin pagar.
+**Probabilidad**: Media
+**Impacto**: Medio
+**Mitigación**:
+- Validar plan del tenant en cada operación protegida
+- Webhook de Mercado Pago actualiza estado de suscripción
+- Sync periódico con MP para verificar estado
+- Backend nunca redirige a success sin checkout_url válido
+
+#### T6.4: Webhook de Mercado Pago falso
+**Descripción**: Atacante envía webhooks falsos para activar suscripciones.
+**Probabilidad**: Media
+**Impacto**: Alto
+**Mitigación**:
+- Verificar firma del webhook con `MP_WEBHOOK_SECRET`
+- Validar payload contra MP API (fetch preapproval/payment por ID)
+- Rate limiting en endpoint de webhook
+
 ---
 
 ## Matriz de Riesgos
@@ -194,6 +221,8 @@ SELECT * FROM expenses WHERE description = $1
 | T5.2 | Operaciones costosas | Media | Bajo | Bajo | Mitigado |
 | T6.1 | Elevación rol | Baja | Alto | Medio | Mitigado |
 | T6.2 | Admin via chat | Media | Medio | Medio | Mitigado |
+| T6.3 | Bypass de pago | Media | Medio | Medio | Parcial |
+| T6.4 | Webhook MP falso | Media | Alto | Alto | **Pendiente** |
 
 ---
 

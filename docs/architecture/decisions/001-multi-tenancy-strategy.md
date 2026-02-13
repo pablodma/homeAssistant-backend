@@ -66,7 +66,7 @@ PostgreSQL Instance
 - Una sola migración aplica a todos
 - Queries simples con WHERE tenant_id = X
 - Connection pooling trivial
-- Funciona bien en n8n (solo agregar filtro)
+- Funciona bien con asyncpg (solo agregar filtro `WHERE tenant_id = $X`)
 - Escalable horizontalmente (read replicas)
 
 **Contras**:
@@ -118,22 +118,27 @@ PostgreSQL Instance
 | Leak en logs | Sanitizar logs, no loggear datos sensibles |
 | Acceso cross-tenant malicioso | Audit logs, alertas por patrones anómalos |
 
-### Validación en n8n
+### Validación en el Código
 
-En cada workflow:
-```javascript
-// Al inicio del workflow, después de identificar usuario
-const tenant_id = $input.tenant_id;
-if (!tenant_id) {
-  throw new Error('tenant_id is required');
-}
+En cada repository (asyncpg):
+```python
+# Toda query DEBE incluir tenant_id
+async def get_expenses(tenant_id: UUID, ...):
+    query = """
+        SELECT * FROM expenses 
+        WHERE tenant_id = $1 
+        AND expense_date >= $2
+    """
+    async with pool.acquire() as conn:
+        return await conn.fetch(query, tenant_id, start_date)
+```
 
-// En cada query PostgreSQL
-const query = `
-  SELECT * FROM expenses 
-  WHERE tenant_id = $1 
-  AND expense_date >= $2
-`;
+En los agentes de homeai-assis:
+```python
+# El tenant_id se resuelve desde phone_tenant_mapping
+tenant_id = await get_tenant_from_phone(phone_number)
+if not tenant_id:
+    raise ValueError("No tenant associated with this phone number")
 ```
 
 ## Consecuencias
@@ -141,7 +146,7 @@ const query = `
 ### Positivas
 - Setup inicial simple
 - Migraciones atómicas para todos los tenants
-- Fácil de implementar en n8n
+- Fácil de implementar con asyncpg y repositorios Python
 - Bajo costo de infraestructura
 - Escalable con read replicas
 

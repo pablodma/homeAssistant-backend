@@ -1,6 +1,6 @@
 # HomeAI - Guía de Configuración de Servicios Externos
 
-**Última actualización:** 2026-02-09  
+**Última actualización:** 2026-02-13  
 **Propósito:** Documentar la configuración necesaria de todos los servicios externos que utiliza HomeAI
 
 ---
@@ -13,58 +13,59 @@
 4. [Railway (Backend)](#3-railway-backend)
 5. [Vercel (Frontend)](#4-vercel-frontend)
 6. [OpenAI](#5-openai)
-7. [Checklist de Configuración](#checklist-de-configuración)
-8. [Troubleshooting](#troubleshooting)
+7. [Mercado Pago](#6-mercado-pago)
+8. [Checklist de Configuración](#checklist-de-configuración)
+9. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Arquitectura General
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           FRONTEND                                   │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    homeai-web (Vercel)                       │   │
-│  │  Next.js 15 + NextAuth + React Query                        │   │
-│  │  URL: https://home-assistant-frontend-brown.vercel.app      │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  │ API calls (JWT)
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                            BACKEND                                   │
-│  ┌──────────────────────────┐  ┌──────────────────────────────┐    │
-│  │ homeai-api (Railway)     │  │ homeai-assis (Railway)        │    │
-│  │ FastAPI + PostgreSQL     │  │ FastAPI + LangChain + OpenAI  │    │
-│  │ Auth, Admin, Finance     │  │ WhatsApp Webhook + Bot Agents │    │
-│  │ Puerto: 8080             │  │ Puerto: 8080                  │    │
-│  └──────────────────────────┘  └──────────────────────────────┘    │
-│              │                              │                        │
-│              │                              │                        │
-│              ▼                              ▼                        │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │                 PostgreSQL (Railway)                          │  │
-│  │         Postgres-Home Asisst (shared database)                │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-                                  │ WhatsApp Messages
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     SERVICIOS EXTERNOS                               │
-│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐        │
-│  │  Google OAuth  │  │  Meta/WhatsApp │  │    OpenAI      │        │
-│  │  (Login)       │  │  (Messaging)   │  │    (AI)        │        │
-│  └────────────────┘  └────────────────┘  └────────────────┘        │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                              FRONTEND                                    │
+│  ┌──────────────────────────────┐  ┌──────────────────────────────┐     │
+│  │   homeai-web (Vercel)        │  │   homeai-admin (Vercel)      │     │
+│  │   Next.js 14 + NextAuth      │  │   Next.js 14 + NextAuth      │     │
+│  │   Landing, Dashboard, Pago   │  │   Agentes, QA, Pricing, etc. │     │
+│  └──────────────────────────────┘  └──────────────────────────────┘     │
+└──────────────────────────────────────────────────────────────────────────┘
+                        │                           │
+                        │ API calls (JWT)           │
+                        ▼                           ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                              BACKEND                                     │
+│  ┌──────────────────────────┐  ┌──────────────────────────────┐         │
+│  │ homeai-api (Railway)     │  │ homeai-assis (Railway)        │         │
+│  │ FastAPI + PostgreSQL     │  │ FastAPI + LangChain + OpenAI  │         │
+│  │ Auth, Admin, Finance,    │  │ WhatsApp Webhook + Bot Agents │         │
+│  │ Subscriptions, Calendar  │  │                               │         │
+│  └──────────────────────────┘  └──────────────────────────────┘         │
+│              │                              │                            │
+│              ▼                              ▼                            │
+│  ┌──────────────────────────────────────────────────────────────┐       │
+│  │                 PostgreSQL (Railway)                          │       │
+│  │         Postgres-Home Asisst (shared database)                │       │
+│  └──────────────────────────────────────────────────────────────┘       │
+└──────────────────────────────────────────────────────────────────────────┘
+                        │
+                        │ External APIs
+                        ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                     SERVICIOS EXTERNOS                                   │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐        │
+│  │  Google    │  │   Meta/    │  │   OpenAI   │  │  Mercado   │        │
+│  │  OAuth     │  │  WhatsApp  │  │   (AI)     │  │   Pago     │        │
+│  │  (Login)   │  │ (Messaging)│  │            │  │ (Payments) │        │
+│  └────────────┘  └────────────┘  └────────────┘  └────────────┘        │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 1. Google OAuth
 
-**Propósito:** Autenticación de usuarios en el panel web
+**Propósito:** Autenticación de usuarios en el panel web y admin
 
 ### Configuración en Google Cloud Console
 
@@ -90,12 +91,15 @@
    ```
    http://localhost:3000
    https://home-assistant-frontend-brown.vercel.app
+   https://homeai-admin-three.vercel.app
    ```
    
    **Authorized redirect URIs:**
    ```
    http://localhost:3000/api/auth/callback/google
+   http://localhost:3001/api/auth/callback/google
    https://home-assistant-frontend-brown.vercel.app/api/auth/callback/google
+   https://homeai-admin-three.vercel.app/api/auth/callback/google
    ```
 
 5. **Obtener credenciales**
@@ -106,10 +110,10 @@
 
 | Variable | Ubicación | Valor |
 |----------|-----------|-------|
-| `GOOGLE_CLIENT_ID` | Vercel (production) | `xxxxxx.apps.googleusercontent.com` |
-| `GOOGLE_CLIENT_SECRET` | Vercel (production) | `GOCSPX-xxxxxx` |
-| `GOOGLE_CLIENT_ID` | Vercel (development) | (mismo) |
-| `GOOGLE_CLIENT_SECRET` | Vercel (development) | (mismo) |
+| `GOOGLE_CLIENT_ID` | Vercel homeai-web (production) | `xxxxxx.apps.googleusercontent.com` |
+| `GOOGLE_CLIENT_SECRET` | Vercel homeai-web (production) | `GOCSPX-xxxxxx` |
+| `GOOGLE_CLIENT_ID` | Vercel homeai-admin (production) | (mismo) |
+| `GOOGLE_CLIENT_SECRET` | Vercel homeai-admin (production) | (mismo) |
 | `GOOGLE_CLIENT_ID` | Railway (homeAssistant-backend) | (mismo) |
 | `GOOGLE_CLIENT_ID` | Local (.env.local) | (mismo) |
 | `GOOGLE_CLIENT_SECRET` | Local (.env.local) | (mismo) |
@@ -165,7 +169,7 @@
 **Token Temporal (desarrollo):**
 - Duración: 24 horas
 - Obtención: API Setup → Generate temporary access token
-- ⚠️ Debe regenerarse cada día
+- Debe regenerarse cada día
 
 **Token Permanente (producción):**
 1. System User → Create System User
@@ -192,18 +196,28 @@
 
 | Servicio | Tipo | Descripción |
 |----------|------|-------------|
-| `homeai-api` | Web | API principal (auth, admin, finance) |
+| `homeAssistant-backend` | Web | API principal (auth, admin, finance, subscriptions, calendar) |
 | `homeai-assis` | Web | Bot de WhatsApp + Agentes AI |
 | `Postgres-Home Asisst` | PostgreSQL | Base de datos compartida |
 
 ### Variables de Entorno por Servicio
 
-**homeai-api (homeAssistant-backend):**
+**homeAssistant-backend (homeai-api):**
 ```env
 DATABASE_URL=postgresql://...
 GOOGLE_CLIENT_ID=xxxxxx.apps.googleusercontent.com
-JWT_SECRET=xxxxxx
-CORS_ORIGINS=https://home-assistant-frontend-brown.vercel.app,http://localhost:3000
+GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxx
+JWT_SECRET_KEY=xxxxxx
+CORS_ORIGINS=[http://localhost:3000,https://home-assistant-frontend-brown.vercel.app,https://homeai-admin-three.vercel.app]
+FRONTEND_URL=https://home-assistant-frontend-brown.vercel.app
+MP_ACCESS_TOKEN=APP_USR-xxx-xxx
+MP_PUBLIC_KEY=APP_USR-xxx-xxx
+MP_WEBHOOK_SECRET=
+MP_SANDBOX=true
+GITHUB_TOKEN=ghp-xxx
+GITHUB_REPO=pablodma/homeAssistant-asistant
+GITHUB_BRANCH=master
+OPENAI_API_KEY=sk-xxx
 ```
 
 **homeai-assis:**
@@ -213,7 +227,7 @@ OPENAI_API_KEY=sk-xxxxxx
 WHATSAPP_ACCESS_TOKEN=EAAxxxxxx
 WHATSAPP_PHONE_NUMBER_ID=967912216407900
 WHATSAPP_VERIFY_TOKEN=xxxxxx
-BACKEND_API_URL=https://homeai-api-production-xxxx.up.railway.app
+BACKEND_API_URL=https://homeassistant-backend-production.up.railway.app
 DEFAULT_TENANT_ID=uuid-del-tenant
 ```
 
@@ -224,10 +238,13 @@ DEFAULT_TENANT_ID=uuid-del-tenant
 railway status
 
 # Ver logs de un servicio
-railway logs --service homeai-assis
+railway logs --service homeAssistant-backend
+
+# Ver logs filtrados
+railway logs --lines 50 --filter "error"
 
 # Configurar variables
-railway variables set KEY=value --service homeai-assis
+railway variables set KEY=value --service homeAssistant-backend
 
 # Conectar a PostgreSQL
 railway connect postgres
@@ -238,34 +255,41 @@ railway connect postgres
 Los scripts de migración están en: `homeai-api/scripts/db/`
 
 ```
-001_init.sql          - Schema inicial
-002_xxx.sql           - ...
-003_agent_admin.sql   - Tablas de agentes e interacciones
-004_increase_phone_length.sql - Ampliar campo phone a VARCHAR(100)
+init.sql                              - Schema inicial (tenants, users, events, reminders, shopping)
+002_calendar_google_integration.sql   - Google Calendar OAuth y sync
+003_agent_admin.sql                   - Prompts de agentes e interacciones
+004_increase_phone_length.sql         - Ampliar campo phone a VARCHAR(100)
+005_multitenancy.sql                  - Multi-tenancy dinámico, phone_tenant_mapping
+005_1_migrate_current_user.sql        - Migrar datos existentes
+006_quality_issues.sql                - Issues de calidad (QA)
+007_subscriptions_coupons_pricing.sql - Suscripciones, cupones, pricing de planes
+007_qa_reviews.sql                    - Ciclos de revisión QA y prompt revisions
+008_plan_services.sql                 - Servicios habilitados por plan
 ```
 
 **Ejecutar migración:**
 ```bash
 # Opción 1: Railway CLI (si psql está instalado)
-railway run psql < scripts/db/004_xxx.sql
+railway run psql < scripts/db/007_subscriptions_coupons_pricing.sql
 
-# Opción 2: Script Node.js temporal
-node check_db.js  # (con query de migración)
+# Opción 2: Script Python
+railway run python scripts/run_migration.py scripts/db/008_plan_services.sql
 ```
 
 ---
 
 ## 4. Vercel (Frontend)
 
-**Propósito:** Hosting del frontend Next.js
+**Propósito:** Hosting de los frontends Next.js
 
-### Proyecto
+### Proyectos
 
-- **Nombre:** homeai-web (o similar)
-- **URL:** https://home-assistant-frontend-brown.vercel.app
-- **Repo:** Conectado a GitHub
+| Proyecto | URL | Repo |
+|----------|-----|------|
+| homeai-web | `https://home-assistant-frontend-brown.vercel.app` | homeAssistant-frontend |
+| homeai-admin | `https://homeai-admin-three.vercel.app` | homeAssistant-admin |
 
-### Variables de Entorno
+### Variables de Entorno (homeai-web)
 
 | Variable | Environment | Valor |
 |----------|-------------|-------|
@@ -273,24 +297,43 @@ node check_db.js  # (con query de migración)
 | `GOOGLE_CLIENT_SECRET` | Production + Preview | `GOCSPX-xxxxxx` |
 | `NEXTAUTH_SECRET` | Production + Preview | (string aleatorio largo) |
 | `NEXTAUTH_URL` | Production | `https://home-assistant-frontend-brown.vercel.app` |
-| `NEXT_PUBLIC_API_URL` | Production | `https://homeai-api-production-xxxx.up.railway.app` |
+| `NEXT_PUBLIC_API_URL` | Production | `https://homeassistant-backend-production.up.railway.app` |
+
+### Variables de Entorno (homeai-admin)
+
+| Variable | Environment | Valor |
+|----------|-------------|-------|
+| `GOOGLE_CLIENT_ID` | Production + Preview | (mismo que web) |
+| `GOOGLE_CLIENT_SECRET` | Production + Preview | (mismo que web) |
+| `NEXTAUTH_SECRET` | Production + Preview | (string aleatorio) |
+| `NEXTAUTH_URL` | Production | `https://homeai-admin-three.vercel.app` |
+| `NEXT_PUBLIC_API_URL` | Production | `https://homeassistant-backend-production.up.railway.app` |
 
 ### Desarrollo Local
 
-Archivo: `.env.local`
+**homeai-web** (`.env.local`):
 ```env
 GOOGLE_CLIENT_ID=xxxxxx.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxx
 NEXTAUTH_SECRET=your-secret-key-here
 NEXTAUTH_URL=http://localhost:3000
-NEXT_PUBLIC_API_URL=https://homeai-api-production-xxxx.up.railway.app
+NEXT_PUBLIC_API_URL=https://homeassistant-backend-production.up.railway.app
+```
+
+**homeai-admin** (`.env.local`):
+```env
+GOOGLE_CLIENT_ID=xxxxxx.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxx
+NEXTAUTH_SECRET=your-secret-key-here
+NEXTAUTH_URL=http://localhost:3001
+NEXT_PUBLIC_API_URL=https://homeassistant-backend-production.up.railway.app
 ```
 
 ---
 
 ## 5. OpenAI
 
-**Propósito:** Procesamiento de lenguaje natural para los agentes
+**Propósito:** Procesamiento de lenguaje natural para los agentes del bot
 
 ### Configuración
 
@@ -303,11 +346,13 @@ NEXT_PUBLIC_API_URL=https://homeai-api-production-xxxx.up.railway.app
 | Variable | Servicio | Valor |
 |----------|----------|-------|
 | `OPENAI_API_KEY` | homeai-assis | `sk-xxxxxx` |
+| `OPENAI_API_KEY` | homeai-api | `sk-xxxxxx` (para event detection) |
 
 ### Modelos Utilizados
 
 - **Router Agent:** `gpt-4o-mini` (clasificación rápida)
 - **Finance/Calendar Agents:** `gpt-4o` (tareas complejas)
+- **Event Detection:** `gpt-4o-mini` (detección de eventos en el calendario)
 
 ### Costos y Límites
 
@@ -316,18 +361,82 @@ NEXT_PUBLIC_API_URL=https://homeai-api-production-xxxx.up.railway.app
 
 ---
 
+## 6. Mercado Pago
+
+**Propósito:** Procesamiento de pagos y suscripciones recurrentes
+
+### Configuración
+
+1. Acceder a https://www.mercadopago.com/developers/
+2. Crear aplicación → Tipo: Checkout / Suscripciones
+3. Obtener credenciales de prueba (sandbox) o producción
+
+### Credenciales
+
+- **Access Token**: Para operaciones server-side (crear suscripciones, consultar pagos)
+- **Public Key**: Para el SDK client-side (no usado actualmente)
+- **Webhook Secret**: Para validar webhooks de MP
+
+### Variables de Entorno
+
+| Variable | Servicio | Descripción |
+|----------|----------|-------------|
+| `MP_ACCESS_TOKEN` | homeai-api | Token de acceso (sandbox o producción) |
+| `MP_PUBLIC_KEY` | homeai-api | Clave pública |
+| `MP_WEBHOOK_SECRET` | homeai-api | Secret para validar webhooks |
+| `MP_SANDBOX` | homeai-api | `true` para sandbox, `false` para producción |
+| `FRONTEND_URL` | homeai-api | URL del frontend para redirect post-pago |
+
+### Flujo de Suscripción
+
+```
+1. Usuario selecciona plan → Frontend /checkout?plan=family
+2. Frontend POST /api/subscriptions → Backend crea preapproval en MP
+3. Backend devuelve checkout_url (init_point de MP)
+4. Frontend redirige al checkout_url de Mercado Pago
+5. Usuario completa pago en MP
+6. MP redirige a FRONTEND_URL/checkout/callback con status
+7. MP envía webhook a /api/v1/webhooks/mercadopago
+8. Backend actualiza subscription status y tenant plan
+```
+
+### Requisitos de Mercado Pago
+
+- **Monto mínimo**: $15.00 ARS por suscripción
+- **Moneda**: ARS (peso argentino)
+- **Frecuencia**: Mensual (configurable)
+
+### Webhooks
+
+Configurar en el dashboard de MP:
+- URL: `https://homeassistant-backend-production.up.railway.app/api/v1/webhooks/mercadopago`
+- Eventos: `subscription_preapproval`, `payment`
+
+### Errores Comunes
+
+| Error | Causa | Solución |
+|-------|-------|----------|
+| `Cannot pay an amount lower than $ 15.00` | Precio del plan < $15 ARS | Actualizar precio en admin panel |
+| `Invalid value for transaction amount` | Precio es 0 o negativo | Verificar pricing del plan |
+| `checkout_url is null` | MP rechazó la creación | Revisar logs del backend |
+
+---
+
 ## Checklist de Configuración
 
 ### Setup Inicial (nuevo desarrollador)
 
-- [ ] Clonar repositorios
+- [ ] Clonar repositorios (homeai-api, homeai-web, homeai-admin, homeai-assis)
 - [ ] Solicitar acceso a Google Cloud Console
 - [ ] Solicitar acceso a Meta for Developers
 - [ ] Solicitar acceso a Railway (agregar al team)
 - [ ] Solicitar acceso a Vercel (agregar al team)
-- [ ] Crear `.env.local` con todas las variables
-- [ ] Verificar que `npm run dev` funciona
+- [ ] Solicitar acceso a Mercado Pago Developers
+- [ ] Crear `.env.local` en homeai-web y homeai-admin con todas las variables
+- [ ] Crear `.env` en homeai-api con todas las variables
+- [ ] Verificar que `npm run dev` funciona en web y admin
 - [ ] Verificar login con Google
+- [ ] Verificar flujo de checkout (sandbox)
 
 ### Rotación de Credenciales
 
@@ -336,6 +445,7 @@ NEXT_PUBLIC_API_URL=https://homeai-api-production-xxxx.up.railway.app
 - [ ] OpenAI API Key (si comprometida)
 - [ ] JWT Secret (si comprometido)
 - [ ] NEXTAUTH_SECRET (si comprometido)
+- [ ] MP Access Token (si comprometido o al pasar de sandbox a producción)
 
 **Pasos para rotar:**
 1. Generar nueva credencial en el servicio correspondiente
@@ -346,9 +456,10 @@ NEXT_PUBLIC_API_URL=https://homeai-api-production-xxxx.up.railway.app
 
 ### Verificación Post-Deployment
 
-- [ ] Login con Google funciona
+- [ ] Login con Google funciona (web y admin)
 - [ ] Dashboard carga datos
-- [ ] Admin panel muestra agentes/interacciones
+- [ ] Admin panel muestra agentes/interacciones/pricing
+- [ ] Flujo de checkout crea suscripción y redirige a MP
 - [ ] Enviar mensaje a WhatsApp → Bot responde
 - [ ] Interacción aparece en admin
 
@@ -381,6 +492,18 @@ NEXT_PUBLIC_API_URL=https://homeai-api-production-xxxx.up.railway.app
 2. Buscar errores de base de datos
 3. Verificar que las migraciones se ejecutaron
 
+### El checkout no redirige a Mercado Pago
+
+1. Verificar `MP_ACCESS_TOKEN` en Railway
+2. Verificar que el precio del plan es >= $15 ARS
+3. Revisar logs del backend: `railway logs --filter "subscription"`
+
+### Error CORS desde admin
+
+1. Verificar que `CORS_ORIGINS` en Railway incluye la URL del admin
+2. Verificar que el backend se deployó correctamente
+3. Hard refresh en el browser (Ctrl+Shift+R)
+
 ### Los cambios no se reflejan
 
 1. Railway: Verificar que el deploy terminó
@@ -394,6 +517,10 @@ NEXT_PUBLIC_API_URL=https://homeai-api-production-xxxx.up.railway.app
 
 | Fecha | Servicio | Cambio | Motivo |
 |-------|----------|--------|--------|
+| 2026-02-13 | homeai-api | CORS fix + MP error handling | Checkout fallaba silenciosamente |
+| 2026-02-12 | homeai-api/web | Mercado Pago inline preapproval | SDK v2 no tiene preapproval_plan |
+| 2026-02-12 | homeai-web | Flujo checkout completo | Header → Pricing → Login → Checkout → Onboarding |
+| 2026-02-11 | homeai-api | Subscriptions + Coupons | Migration 007, 008 |
 | 2026-02-09 | Google OAuth | Nuevas credenciales | App anterior eliminada |
 | 2026-02-09 | Railway DB | Migration 004 | Campo phone muy corto |
 | 2026-02-09 | homeai-assis | Nuevo Access Token | Token expirado |

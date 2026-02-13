@@ -1,7 +1,7 @@
 # HomeAI - Deuda Técnica y Roadmap a Producción
 
-**Última actualización:** 2026-02-09 (auth + WhatsApp + DB migration)  
-**Estado actual:** Fase 2 (MVP)
+**Última actualización:** 2026-02-13 (subscriptions + checkout flow + docs update)  
+**Estado actual:** Fase 2 (MVP - con suscripciones y pagos)
 
 ---
 
@@ -389,8 +389,16 @@ homeai-api/docs/
 ---
 
 ### 14. Frontend Admin Completo
-**Estado:** Funcional pero básico  
-**Ubicación:** `homeai-web/src/app/(admin)/`
+**Estado:** Funcional con features core  
+**Ubicación:** `homeai-admin/` (repositorio separado)
+
+**Features implementados:**
+- [x] Gestión de agentes y prompts
+- [x] Historial de interacciones
+- [x] Estadísticas de uso
+- [x] Quality issues (QA)
+- [x] Gestión de pricing (editable desde admin)
+- [x] Gestión de cupones (CRUD completo)
 
 **Mejoras deseables:**
 - [ ] Gráficos de estadísticas más detallados
@@ -441,24 +449,21 @@ export function useAuthenticatedQuery<T>(options: UseQueryOptions<T>) {
 ---
 
 ### 15. Onboarding Self-Service
-**Estado:** NO implementado  
-**Ubicación:** `homeai-web`
+**Estado:** Parcialmente implementado  
+**Ubicación:** `homeai-web/src/app/(onboarding)/`
 
-**Problema:**
-- Nuevos tenants se crean manualmente
-- No hay flujo para vincular WhatsApp
+**Implementado:**
+- [x] Página de onboarding con pasos guiados
+- [x] Configurar nombre del hogar
+- [x] Agregar miembros
+- [x] Creación automática de tenant al completar onboarding
+- [x] Flujo: Login → Checkout (pago) → Onboarding → Dashboard
 
-**Solución requerida:**
-```
-1. Página de registro público
-2. Flujo de verificación de WhatsApp:
-   - Usuario ingresa su número
-   - Bot envía código de verificación
-   - Usuario confirma código en web
-3. Creación automática de tenant
-```
+**Pendiente:**
+- [ ] Flujo de verificación de WhatsApp (vincular número)
+- [ ] Envío de código de verificación via bot
 
-**Esfuerzo estimado:** 3-4 días
+**Esfuerzo estimado restante:** 2 días (vinculación WhatsApp)
 
 ---
 
@@ -480,18 +485,30 @@ export function useAuthenticatedQuery<T>(options: UseQueryOptions<T>) {
 ### homeai-api (Backend)
 | Item | Prioridad | Estado | Esfuerzo |
 |------|-----------|--------|----------|
+| ~~Suscripciones MP~~ | ~~P0~~ | ~~IMPLEMENTADO~~ | ~~-~~ |
+| ~~Pricing editable~~ | ~~P0~~ | ~~IMPLEMENTADO~~ | ~~-~~ |
+| ~~Cupones~~ | ~~P1~~ | ~~IMPLEMENTADO~~ | ~~-~~ |
 | Tests | P1 | Mínimo | 2 días |
-| Documentación API | P1 | NO | 1 día |
+| Documentación API | P1 | Parcial (Swagger auto) | 0.5 días |
 | Backup | P1 | ? | 0.5 días |
 
 ### homeai-web (Frontend)
 | Item | Prioridad | Estado | Esfuerzo |
 |------|-----------|--------|----------|
+| ~~Checkout flow~~ | ~~P0~~ | ~~IMPLEMENTADO~~ | ~~-~~ |
+| ~~Onboarding~~ | ~~P0~~ | ~~IMPLEMENTADO~~ | ~~-~~ |
 | Tests | P1 | NO | 1-2 días |
-| Admin mejorado | P2 | Básico | 3-5 días |
-| Onboarding | P2 | NO | 3-4 días |
 | Sync auth hooks finance | P2 | Parcial | 0.5 días |
 | ~~Timing auth admin~~ | ~~P0~~ | ~~RESUELTO~~ | ~~-~~ |
+| Vincular WhatsApp | P2 | NO | 2 días |
+
+### homeai-admin (Panel Admin - repositorio separado)
+| Item | Prioridad | Estado | Esfuerzo |
+|------|-----------|--------|----------|
+| ~~Pricing management~~ | ~~P0~~ | ~~IMPLEMENTADO~~ | ~~-~~ |
+| ~~Cupones CRUD~~ | ~~P1~~ | ~~IMPLEMENTADO~~ | ~~-~~ |
+| ~~Quality issues~~ | ~~P1~~ | ~~IMPLEMENTADO~~ | ~~-~~ |
+| Mejoras UI | P2 | Básico | 3-5 días |
 
 ### Infraestructura
 | Item | Prioridad | Estado | Esfuerzo |
@@ -529,6 +546,92 @@ export function useAuthenticatedQuery<T>(options: UseQueryOptions<T>) {
 ---
 
 ## ✅ Problemas Resueltos
+
+### [2026-02-13] Checkout silencioso - Suscripción sin pago real
+
+**Síntoma:**
+- Al elegir un plan pago (Family/Premium) y completar el flujo, el usuario nunca era redirigido a Mercado Pago
+- La app mostraba "pago exitoso" sin que se haya efectuado un pago
+- En los logs de Railway: `Cannot pay an amount lower than $ 15.00`
+
+**Causa raíz (múltiple):**
+1. El backend creaba la suscripción en BD y llamaba a MP, pero si MP rechazaba (error 400), seguía devolviendo `201 Created` con `checkout_url: null`
+2. El frontend, al no recibir `checkout_url`, redirigía directamente a `/checkout/success`
+3. El precio del plan Family ($9.99 ARS) estaba por debajo del mínimo de MP ($15 ARS)
+
+**Soluciones implementadas:**
+1. **Backend**: Si MP falla al crear preapproval, marca la suscripción como `cancelled` y devuelve error `502` con mensaje descriptivo
+2. **Frontend**: Si no hay `checkout_url`, muestra error en pantalla en vez de redirigir a success
+3. **Nota**: Los precios de planes deben ser >= $15 ARS (configurar desde admin panel)
+
+**Archivos modificados:**
+- `homeai-api/src/app/services/subscription.py` - Manejo de error cuando MP falla
+- `homeai-api/src/app/routers/subscriptions.py` - Captura `RuntimeError` con HTTP 502
+- `homeai-web/src/app/(checkout)/checkout/page.tsx` - Mostrar error sin checkout_url
+
+---
+
+### [2026-02-13] Admin plan update falla con FK violation
+
+**Síntoma:**
+- Al actualizar un plan desde el admin panel, error 500 Internal Server Error
+- CORS error como efecto secundario (500 no incluye headers CORS)
+
+**Causa raíz:**
+- `plan_pricing.updated_by` tiene FK a `users(id)`
+- El usuario autenticado en admin fue eliminado de la tabla `users` durante cleanup de testing
+- El backend intentaba setear `updated_by = uuid_del_usuario_eliminado`
+
+**Solución:**
+- El campo `updated_by` ahora es opcional en el repositorio
+- El router captura `ForeignKeyViolationError` y reintenta sin `updated_by`
+
+**Archivos modificados:**
+- `homeai-api/src/app/repositories/plan_pricing.py` - `updated_by` opcional
+- `homeai-api/src/app/routers/plans.py` - Catch FK violation, retry sin updated_by
+
+---
+
+### [2026-02-12] Mercado Pago SDK v2 - preapproval_plan no existe
+
+**Síntoma:**
+- Al crear suscripción, error `'SDK' object has no attribute 'preapproval_plan'`
+- Las suscripciones quedaban en estado "pending" sin checkout URL
+
+**Causa raíz:**
+- El SDK v2 de Mercado Pago para Python no expone `preapproval_plan()` (que existía en v1)
+- El código intentaba crear primero un plan y luego una suscripción asociada
+
+**Solución:**
+- Refactorizado a **inline preapproval**: se pasa toda la info de auto_recurring directamente a `sdk.preapproval().create()` sin crear plan previo
+
+**Archivos modificados:**
+- `homeai-api/src/app/config/mercadopago.py` - Nuevo método `create_subscription` con inline preapproval
+- `homeai-api/src/app/services/subscription.py` - Usa nuevo método directamente
+
+---
+
+### [2026-02-12] Flujo de usuario incorrecto - Login bypass payment
+
+**Síntoma:**
+- Después del login, el usuario iba directo a configurar el hogar (onboarding) sin pasar por el checkout
+- El botón "Comenzar" del header iba a `/contratar` en vez de hacer scroll a pricing
+- El middleware redirigía usuarios autenticados sin considerar si habían pagado
+
+**Solución:**
+- Header "Comenzar" ahora hace smooth scroll a `#pricing` en la landing
+- Plan Starter (gratis) → `/login?callbackUrl=/onboarding`
+- Plan Family/Premium (pago) → `/login?callbackUrl=/checkout?plan=X`
+- Middleware permite acceso a `/checkout` sin onboarding completado
+- Login page respeta `callbackUrl` del query param
+
+**Archivos modificados:**
+- `homeai-web/src/components/landing/Header.tsx`
+- `homeai-web/src/components/landing/PricingSection.tsx`
+- `homeai-web/src/middleware.ts`
+- `homeai-web/src/app/(auth)/login/page.tsx`
+
+---
 
 ### [2026-02-09] Error fijar_presupuesto - Columna updated_at inexistente
 
