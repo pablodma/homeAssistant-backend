@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .common import BaseSchema
 
@@ -56,7 +56,7 @@ class PlanPricingResponse(BaseSchema):
     plan_type: PlanType
     name: str
     description: str | None
-    price_monthly: Decimal
+    price_monthly: float
     currency: str
     max_members: int
     max_messages_month: int | None
@@ -109,7 +109,7 @@ class PlanComparisonResponse(BaseModel):
 
     current_plan: PlanPricingResponse
     target_plan: PlanPricingResponse
-    price_difference: Decimal
+    price_difference: float
     is_upgrade: bool
     features_gained: list[str]
     features_lost: list[str]

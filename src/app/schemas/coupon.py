@@ -142,9 +142,9 @@ class CouponRedemptionResponse(BaseSchema):
     coupon_id: UUID
     tenant_id: UUID
     subscription_id: UUID | None
-    discount_applied: Decimal
-    original_price: Decimal
-    final_price: Decimal
+    discount_applied: float
+    original_price: float
+    final_price: float
     redeemed_at: datetime
 
 
@@ -154,5 +154,5 @@ class CouponStatsResponse(BaseModel):
     coupon_id: UUID
     code: str
     total_redemptions: int
-    total_discount_given: Decimal
+    total_discount_given: float
     recent_redemptions: list[CouponRedemptionResponse]

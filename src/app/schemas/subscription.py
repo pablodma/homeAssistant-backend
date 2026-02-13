@@ -49,9 +49,9 @@ class SubscriptionCreateResponse(BaseModel):
 
     subscription_id: UUID
     checkout_url: str | None = None
-    original_price: Decimal
+    original_price: float
     discount_percent: int | None = None
-    final_price: Decimal
+    final_price: float
     plan_type: str
 
 
@@ -76,7 +76,7 @@ class SubscriptionPaymentResponse(BaseSchema):
     subscription_id: UUID | None
     tenant_id: UUID
     mp_payment_id: str | None
-    amount: Decimal
+    amount: float
     currency: str
     status: PaymentStatus
     paid_at: datetime | None
