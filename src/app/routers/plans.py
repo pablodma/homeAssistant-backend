@@ -207,11 +207,24 @@ async def update_plan_pricing(
 
     # Update plan
     user_id = current_user.id if current_user else DEFAULT_ADMIN_ID
-    plan = await plan_pricing_repo.update_plan_pricing(
-        plan_type=plan_type,
-        updated_by=user_id,
-        **update_data,
-    )
+
+    try:
+        plan = await plan_pricing_repo.update_plan_pricing(
+            plan_type=plan_type,
+            updated_by=user_id,
+            **update_data,
+        )
+    except Exception as e:
+        # If FK violation on updated_by (user deleted), retry without it
+        if "foreign key" in str(e).lower() and "updated_by" in str(e).lower():
+            logger.warning(f"User {user_id} not found in users table, updating plan without updated_by")
+            plan = await plan_pricing_repo.update_plan_pricing(
+                plan_type=plan_type,
+                updated_by=None,
+                **update_data,
+            )
+        else:
+            raise
 
     if not plan:
         raise HTTPException(

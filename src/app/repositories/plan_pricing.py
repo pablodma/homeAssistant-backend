@@ -95,9 +95,14 @@ async def update_plan_pricing(
     pool = await get_pool()
 
     # Build dynamic update query
-    fields = ["updated_at = NOW()", "updated_by = $1"]
-    values: list[Any] = [updated_by]
-    idx = 2
+    fields = ["updated_at = NOW()"]
+    values: list[Any] = []
+    idx = 1
+
+    if updated_by is not None:
+        fields.append(f"updated_by = ${idx}")
+        values.append(updated_by)
+        idx += 1
 
     if name is not None:
         fields.append(f"name = ${idx}")
