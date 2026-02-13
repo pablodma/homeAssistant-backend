@@ -103,6 +103,29 @@ class SubscriptionService:
                     mp_payer_id=preapproval.get("payer_id"),
                 )
                 checkout_url = preapproval.get("init_point")
+            else:
+                # MP failed to create subscription – mark as cancelled and raise error
+                logger.error(
+                    f"MP failed to create preapproval for subscription {subscription['id']}. "
+                    f"Plan: {plan_type}, price: {final_price}, email: {payer_email}"
+                )
+                await subscription_repo.update_subscription_status(
+                    subscription_id=subscription["id"],
+                    status="cancelled",
+                )
+                raise RuntimeError(
+                    f"No se pudo crear la suscripción en Mercado Pago. "
+                    f"Verifica que el precio del plan ({final_price} {plan.get('currency', 'ARS')}) "
+                    f"sea válido (mínimo $15 ARS)."
+                )
+        else:
+            # MP not configured – cannot process paid plans
+            logger.error("Mercado Pago is not configured – cannot process paid subscription")
+            await subscription_repo.update_subscription_status(
+                subscription_id=subscription["id"],
+                status="cancelled",
+            )
+            raise RuntimeError("El sistema de pagos no está configurado. Contacta al soporte.")
 
         # Register coupon redemption if used
         if coupon_id and coupon_code:
