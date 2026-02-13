@@ -22,8 +22,6 @@ from ..schemas.admin import (
     PromptRevisionItem,
     PromptUpdateResponse,
     QAReviewHistoryItem,
-    QAReviewRequest,
-    QAReviewResponse,
     QualityIssueCounts,
     QualityIssueListResponse,
     QualityIssueResolve,
@@ -35,7 +33,7 @@ from ..schemas.admin import (
 from ..schemas.auth import CurrentUser
 from ..services.admin import AdminService
 from ..services.github import GitHubService, GitHubServiceError
-from ..services.qa_reviewer import QABatchReviewer
+from ..services.qa_reviewer import QAReviewService
 
 router = APIRouter(prefix="/tenants/{tenant_id}/admin", tags=["Admin"])
 
@@ -348,54 +346,8 @@ async def resolve_quality_issue(
 
 
 # =====================================================
-# QA REVIEW (Batch analysis & prompt improvement)
+# QA REVIEW (History & Rollback only - AI logic in homeai-assis)
 # =====================================================
-
-
-@router.post("/qa-review", response_model=QAReviewResponse)
-async def trigger_qa_review(
-    tenant_id: UUID,
-    body: QAReviewRequest,
-    user: CurrentUser = Depends(get_current_user),
-) -> QAReviewResponse:
-    """Trigger a QA batch review.
-
-    Analyzes unresolved quality issues using Claude and automatically
-    improves agent prompts based on detected patterns.
-
-    This operation may take 30-60 seconds depending on the number of issues.
-    """
-    reviewer = QABatchReviewer()
-
-    try:
-        result = await reviewer.run_review(
-            tenant_id=str(tenant_id),
-            triggered_by=user.email or "admin",
-            days=body.days,
-        )
-
-        revisions = [
-            PromptRevisionItem(**rev) for rev in result.get("revisions", [])
-        ]
-
-        return QAReviewResponse(
-            cycle_id=result["cycle_id"],
-            status=result["status"],
-            issues_analyzed=result["issues_analyzed"],
-            improvements_applied=result["improvements_applied"],
-            analysis=result.get("analysis"),
-            revisions=revisions,
-            message=result.get("message"),
-        )
-
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error("QA review endpoint failed", error=str(e), traceback=traceback.format_exc())
-        raise HTTPException(
-            status_code=500,
-            detail={"error": "QA review failed", "message": str(e)},
-        )
 
 
 @router.get("/qa-review/history", response_model=list[QAReviewHistoryItem])
@@ -408,10 +360,10 @@ async def get_qa_review_history(
 
     Returns past review executions with their results and applied revisions.
     """
-    reviewer = QABatchReviewer()
+    service = QAReviewService()
 
     try:
-        history = await reviewer.get_review_history(
+        history = await service.get_review_history(
             tenant_id=str(tenant_id),
             limit=limit,
         )
@@ -436,10 +388,10 @@ async def rollback_prompt_revision(
     Restores the original prompt content before the QA review modification.
     Creates a new GitHub commit with the restored content.
     """
-    reviewer = QABatchReviewer()
+    service = QAReviewService()
 
     try:
-        result = await reviewer.rollback_revision(
+        result = await service.rollback_revision(
             tenant_id=str(tenant_id),
             revision_id=str(revision_id),
             rolled_back_by=user.email or "admin",
