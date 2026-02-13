@@ -1,10 +1,14 @@
 """Admin router for agent management."""
 
+import traceback
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+logger = structlog.get_logger()
 
 from ..middleware.auth import get_current_user
 from ..schemas.admin import (
@@ -387,6 +391,7 @@ async def trigger_qa_review(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error("QA review endpoint failed", error=str(e), traceback=traceback.format_exc())
         raise HTTPException(
             status_code=500,
             detail={"error": "QA review failed", "message": str(e)},
@@ -413,6 +418,7 @@ async def get_qa_review_history(
         return [QAReviewHistoryItem(**item) for item in history]
 
     except Exception as e:
+        logger.error("QA review history failed", error=str(e), traceback=traceback.format_exc())
         raise HTTPException(
             status_code=500,
             detail={"error": "Failed to get review history", "message": str(e)},
@@ -443,6 +449,7 @@ async def rollback_prompt_revision(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        logger.error("Rollback endpoint failed", error=str(e), traceback=traceback.format_exc())
         raise HTTPException(
             status_code=500,
             detail={"error": "Rollback failed", "message": str(e)},

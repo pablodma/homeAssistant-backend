@@ -318,7 +318,22 @@ class QABatchReviewer:
             limit,
         )
 
-        return [dict(row) for row in rows]
+        results = []
+        for row in rows:
+            item = dict(row)
+            # asyncpg returns PostgreSQL json type as raw string, not Python objects.
+            # Parse it manually so Pydantic can validate list[dict[str, Any]].
+            revisions_raw = item.get("revisions")
+            if isinstance(revisions_raw, str):
+                try:
+                    item["revisions"] = json.loads(revisions_raw)
+                except (json.JSONDecodeError, TypeError):
+                    item["revisions"] = []
+            elif revisions_raw is None:
+                item["revisions"] = []
+            results.append(item)
+
+        return results
 
     # =====================================================
     # PRIVATE METHODS
@@ -642,9 +657,11 @@ class QABatchReviewer:
         )
 
         # Call Claude for improvement
+        # max_tokens=16000 to avoid truncation: the improved_prompt field contains
+        # the full agent prompt which can be thousands of tokens when JSON-encoded.
         response = await self.client.messages.create(
             model=self.settings.qa_review_model,
-            max_tokens=8000,
+            max_tokens=16000,
             system=PROMPT_IMPROVER_SYSTEM,
             messages=[
                 {"role": "user", "content": user_message},
@@ -653,6 +670,15 @@ class QABatchReviewer:
         )
 
         content = response.content[0].text
+
+        # Check if response was truncated (stop_reason == "max_tokens")
+        if response.stop_reason == "max_tokens":
+            logger.error(
+                "Claude improvement response truncated (max_tokens reached)",
+                agent_name=agent_name,
+                content_length=len(content),
+            )
+            return None
 
         # Clean markdown if present
         if content.startswith("```"):
@@ -664,7 +690,13 @@ class QABatchReviewer:
         try:
             result = json.loads(content)
         except json.JSONDecodeError as e:
-            logger.error("Failed to parse improvement response", error=str(e), content=content[:200])
+            logger.error(
+                "Failed to parse improvement response",
+                error=str(e),
+                content=content[:300],
+                content_length=len(content),
+                stop_reason=response.stop_reason,
+            )
             return None
 
         if not result.get("should_modify"):
