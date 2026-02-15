@@ -145,12 +145,27 @@ class OnboardingRepository:
         """
         Normalize phone number to E.164 format.
         
-        WhatsApp webhooks may send numbers without the '+' prefix,
-        but we store them with '+'. This ensures consistent lookups.
+        Handles two normalizations:
+        1. Ensures '+' prefix for E.164 compliance
+        2. Argentina mobile fix: WhatsApp uses +549XXXXXXXXXX (with '9' after
+           country code 54) for mobile numbers. If the number starts with +54
+           but is missing the '9', we insert it. This ensures stored numbers
+           match what WhatsApp sends in webhooks.
+           
+           Example: +541161366496 → +5491161366496
         """
         phone = phone.strip()
         if not phone.startswith("+"):
             phone = f"+{phone}"
+        
+        # Argentina mobile normalization: +54XX... → +549XX...
+        # Argentine numbers after +54 should have 9 + 10 digits (area + subscriber)
+        # If we have +54 followed by 10 digits WITHOUT the 9 prefix, add it
+        if phone.startswith("+54") and not phone.startswith("+549"):
+            rest = phone[3:]  # digits after +54
+            if len(rest) == 10:
+                phone = f"+549{rest}"
+        
         return phone
 
     async def get_tenant_by_phone(self, phone: str) -> dict[str, Any] | None:
@@ -160,11 +175,23 @@ class OnboardingRepository:
         Used by the bot for multitenancy resolution.
         Looks up directly in the users table (source of truth).
         Normalizes the phone number to E.164 format before lookup.
+        
+        For Argentina numbers, searches both +549XX and +54XX formats
+        to handle legacy data that may lack the mobile '9' prefix.
         """
         pool = await get_pool()
         
-        # Normalize phone to E.164 format (with '+' prefix)
+        # Normalize phone to E.164 format (with '+' prefix and AR mobile 9)
         normalized_phone = self._normalize_phone(phone)
+        
+        # Build list of phone variants to search
+        phone_variants = [normalized_phone]
+        
+        # For Argentina: also search without the 9 (legacy data compatibility)
+        # +5491161366496 → also try +541161366496
+        if normalized_phone.startswith("+549"):
+            without_nine = f"+54{normalized_phone[4:]}"
+            phone_variants.append(without_nine)
         
         query = """
             SELECT 
@@ -179,11 +206,11 @@ class OnboardingRepository:
                 t.currency
             FROM users u
             JOIN tenants t ON u.tenant_id = t.id
-            WHERE u.phone = $1
+            WHERE u.phone = ANY($1)
               AND u.is_active = true
         """
         
-        row = await pool.fetchrow(query, normalized_phone)
+        row = await pool.fetchrow(query, phone_variants)
         return dict(row) if row else None
 
     async def get_members_by_tenant(self, tenant_id: UUID) -> list[dict[str, Any]]:
@@ -219,14 +246,24 @@ class OnboardingRepository:
         return result == "UPDATE 1"
 
     async def check_phone_exists(self, phone: str) -> bool:
-        """Check if a phone is already registered to any user."""
+        """Check if a phone is already registered to any user.
+        
+        For Argentina numbers, checks both +549XX and +54XX formats.
+        """
         pool = await get_pool()
         
         normalized_phone = self._normalize_phone(phone)
         
+        # Build variants for Argentina compatibility
+        phone_variants = [normalized_phone]
+        if normalized_phone.startswith("+549"):
+            phone_variants.append(f"+54{normalized_phone[4:]}")
+        elif normalized_phone.startswith("+54") and not normalized_phone.startswith("+549"):
+            phone_variants.append(f"+549{normalized_phone[3:]}")
+        
         exists = await pool.fetchval(
-            "SELECT EXISTS(SELECT 1 FROM users WHERE phone = $1 AND is_active = true)",
-            normalized_phone,
+            "SELECT EXISTS(SELECT 1 FROM users WHERE phone = ANY($1) AND is_active = true)",
+            phone_variants,
         )
         
         return bool(exists)
