@@ -46,6 +46,14 @@ class SubscriptionService:
         if plan_type not in ("starter", "family", "premium"):
             raise ValueError(f"Invalid plan type: {plan_type}")
 
+        # Validate tenant exists in DB
+        tenant = await subscription_repo.get_tenant_by_id(tenant_id)
+        if not tenant:
+            raise ValueError(
+                "Tu cuenta no está configurada correctamente. "
+                "Por favor, cerrá sesión e iniciá sesión nuevamente."
+            )
+
         # Get variant ID for this plan
         variant_id = PLAN_VARIANT_MAP.get(plan_type)
         if not variant_id:

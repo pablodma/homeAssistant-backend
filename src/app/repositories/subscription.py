@@ -9,6 +9,23 @@ from ..config.database import get_pool
 
 
 # =============================================================================
+# Tenant Helpers
+# =============================================================================
+
+
+async def get_tenant_by_id(tenant_id: UUID) -> dict[str, Any] | None:
+    """Check if a tenant exists and return basic info."""
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, plan, name FROM tenants WHERE id = $1",
+            tenant_id,
+        )
+        return dict(row) if row else None
+
+
+# =============================================================================
 # Subscription Operations
 # =============================================================================
 
