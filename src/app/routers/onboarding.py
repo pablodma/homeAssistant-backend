@@ -1,4 +1,4 @@
-"""Onboarding endpoints for tenant creation and phone management."""
+"""Onboarding endpoints for tenant creation and member management."""
 
 from typing import Annotated
 from uuid import UUID
@@ -8,12 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from ..middleware.auth import CurrentUser, get_current_user, validate_tenant_access
 from ..repositories.onboarding import get_onboarding_repository
 from ..schemas.onboarding import (
+    AddMemberRequest,
+    MemberResponse,
     OnboardingRequest,
     OnboardingResponse,
     OnboardingStatusResponse,
     PhoneLookupResponse,
-    PhoneTenantMapping,
-    RegisterPhoneRequest,
 )
 
 router = APIRouter(tags=["Onboarding"])
@@ -54,8 +54,8 @@ async def complete_onboarding(
     Complete onboarding by creating a new tenant.
     
     - Creates a new tenant with the provided settings
-    - Associates the current user as owner
-    - Registers all phone numbers
+    - Updates the owner user with their phone
+    - Creates user records for each additional member
     - Creates default budget categories
     """
     repo = get_onboarding_repository()
@@ -78,25 +78,25 @@ async def complete_onboarding(
         currency=request.currency,
     )
     
-    # Update user's tenant
+    # Update owner's tenant and phone
     await repo.update_user_tenant(current_user.id, tenant_id)
     
-    # Register all phone numbers
+    # Process members
     for i, member in enumerate(request.members):
-        # First admin member is primary
-        is_primary = (i == 0 and member.role == "admin") or (
-            member.role == "admin" and not any(
-                m.role == "admin" for m in request.members[:i]
-            )
-        )
+        is_owner_member = (i == 0 and member.role == "admin")
         
-        await repo.register_phone(
-            phone=member.phone,
-            tenant_id=tenant_id,
-            user_id=current_user.id if is_primary else None,
-            display_name=member.name,
-            is_primary=is_primary,
-        )
+        if is_owner_member:
+            # First admin = the owner. Update their existing user record with phone.
+            await repo.update_user_phone(current_user.id, member.phone)
+        else:
+            # Additional members: create new user records
+            await repo.create_member(
+                tenant_id=tenant_id,
+                phone=member.phone,
+                display_name=member.name,
+                role=member.role,
+                email=member.email,
+            )
     
     # Create default budget categories
     await repo.create_default_budget_categories(tenant_id)
@@ -110,7 +110,7 @@ async def complete_onboarding(
 
 
 # ============================================================================
-# Phone Management Endpoints
+# Phone Lookup (Public - used by bot)
 # ============================================================================
 
 @router.get("/phone/lookup", response_model=PhoneLookupResponse)
@@ -122,6 +122,7 @@ async def lookup_phone(
     
     This endpoint is used by the bot for multitenancy resolution.
     It's intentionally public (no auth) so the bot can call it.
+    Searches the users table directly.
     """
     repo = get_onboarding_repository()
     result = await repo.get_tenant_by_phone(phone)
@@ -142,44 +143,52 @@ async def lookup_phone(
     )
 
 
+# ============================================================================
+# Member Management Endpoints
+# ============================================================================
+
 @router.get(
-    "/tenants/{tenant_id}/phones",
-    response_model=list[PhoneTenantMapping],
+    "/tenants/{tenant_id}/members",
+    response_model=list[MemberResponse],
 )
-async def list_tenant_phones(
+async def list_members(
     tenant_id: UUID,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
-) -> list[PhoneTenantMapping]:
-    """List all phones registered to a tenant."""
+) -> list[MemberResponse]:
+    """List all members of a tenant."""
     validate_tenant_access(current_user.tenant_id, tenant_id)
     
     repo = get_onboarding_repository()
-    phones = await repo.get_phones_by_tenant(tenant_id)
+    members = await repo.get_members_by_tenant(tenant_id)
     
     return [
-        PhoneTenantMapping(
-            phone=p["phone"],
-            tenant_id=tenant_id,
-            user_id=p.get("user_id"),
-            display_name=p.get("display_name"),
-            is_primary=p.get("is_primary", False),
-            verified_at=p.get("verified_at"),
+        MemberResponse(
+            id=m["id"],
+            phone=m.get("phone"),
+            email=m.get("email"),
+            display_name=m.get("display_name"),
+            role=m.get("role", "member"),
+            phone_verified=m.get("phone_verified", False),
+            email_verified=m.get("email_verified", False),
+            avatar_url=m.get("avatar_url"),
+            is_active=m.get("is_active", True),
+            created_at=m.get("created_at"),
         )
-        for p in phones
+        for m in members
     ]
 
 
 @router.post(
-    "/tenants/{tenant_id}/phones",
-    response_model=PhoneTenantMapping,
+    "/tenants/{tenant_id}/members",
+    response_model=MemberResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def register_phone(
+async def add_member(
     tenant_id: UUID,
-    request: RegisterPhoneRequest,
+    request: AddMemberRequest,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
-) -> PhoneTenantMapping:
-    """Register a new phone number to a tenant."""
+) -> MemberResponse:
+    """Add a new member to a tenant."""
     validate_tenant_access(current_user.tenant_id, tenant_id)
     
     repo = get_onboarding_repository()
@@ -191,38 +200,47 @@ async def register_phone(
             detail="Phone number is already registered",
         )
     
-    await repo.register_phone(
-        phone=request.phone,
+    user_id = await repo.create_member(
         tenant_id=tenant_id,
-        user_id=None,  # Can be linked later
+        phone=request.phone,
         display_name=request.display_name,
-        is_primary=request.is_primary,
+        role=request.role,
+        email=request.email,
     )
     
-    return PhoneTenantMapping(
+    return MemberResponse(
+        id=user_id,
         phone=request.phone,
-        tenant_id=tenant_id,
-        user_id=None,
+        email=request.email,
         display_name=request.display_name,
-        is_primary=request.is_primary,
-        verified_at=None,
+        role=request.role,
     )
 
 
-@router.delete("/tenants/{tenant_id}/phones/{phone}", status_code=status.HTTP_204_NO_CONTENT)
-async def remove_phone(
+@router.delete(
+    "/tenants/{tenant_id}/members/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_member(
     tenant_id: UUID,
-    phone: str,
+    user_id: UUID,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> None:
-    """Remove a phone number from a tenant."""
+    """Remove a member from a tenant (soft delete)."""
     validate_tenant_access(current_user.tenant_id, tenant_id)
     
-    repo = get_onboarding_repository()
-    deleted = await repo.delete_phone_mapping(phone, tenant_id)
+    # Can't remove yourself
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot remove yourself",
+        )
     
-    if not deleted:
+    repo = get_onboarding_repository()
+    removed = await repo.remove_member(user_id, tenant_id)
+    
+    if not removed:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Phone not found",
+            detail="Member not found",
         )

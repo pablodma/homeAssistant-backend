@@ -25,11 +25,13 @@ alwaysApply: true
 - ✅ Panel de administración para editar prompts
 - ✅ Logging de interacciones
 - ✅ Integración Google Calendar
-- 🔄 Multi-tenant (implementado pero usando tenant fijo)
+- ✅ Multi-tenant real (phone_tenant_mapping + PhoneResolver + onboarding)
+- ✅ Suscripciones y pagos (Mercado Pago)
+- ✅ Onboarding self-service (nombre hogar + miembros + teléfonos)
 - 🔄 Testing y estabilización
 
 ### Próxima Fase: Producción
-- [ ] Multi-tenant completo (onboarding self-service)
+- [ ] Verificación de WhatsApp (código SMS/bot)
 - [ ] Recordatorios proactivos (templates WhatsApp aprobados)
 - [ ] Manejo de errores robusto
 - [ ] Rate limiting

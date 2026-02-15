@@ -21,8 +21,7 @@ dependencies = [
     "openai>=1.12.0",
     # Timezone support
     "pytz>=2024.1",
-    # Mercado Pago SDK
-    "mercadopago>=2.2.0",
+    # Lemon Squeezy (uses httpx for REST API calls - already included above)
 ]
 
 [project.optional-dependencies]

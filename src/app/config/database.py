@@ -64,11 +64,64 @@ async def create_pool() -> Pool:
     )
 
 
+async def _run_startup_migrations(pool: Pool) -> None:
+    """Run pending schema migrations on startup.
+
+    These are idempotent – safe to run on every boot.
+    """
+    async with pool.acquire() as conn:
+        # Migration: MP -> Lemon Squeezy columns
+        has_mp_col = await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='subscriptions' AND column_name='mp_preapproval_id')"
+        )
+        if has_mp_col:
+            print("Running migration: MP -> Lemon Squeezy columns...")
+            await conn.execute("""
+                ALTER TABLE subscriptions
+                    ADD COLUMN IF NOT EXISTS ls_subscription_id TEXT,
+                    ADD COLUMN IF NOT EXISTS ls_checkout_id TEXT;
+                ALTER TABLE subscriptions
+                    DROP COLUMN IF EXISTS mp_preapproval_id,
+                    DROP COLUMN IF EXISTS mp_payer_id;
+                ALTER TABLE subscription_payments
+                    ADD COLUMN IF NOT EXISTS ls_invoice_id TEXT;
+                ALTER TABLE subscription_payments
+                    DROP COLUMN IF EXISTS mp_payment_id;
+                ALTER TABLE subscription_payments
+                    ALTER COLUMN currency SET DEFAULT 'USD';
+                DROP TABLE IF EXISTS subscription_plans_mp;
+            """)
+            print("Migration MP -> LS completed.")
+
+        # Ensure LS columns exist (for fresh DBs)
+        has_ls_col = await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='subscriptions' AND column_name='ls_subscription_id')"
+        )
+        if not has_ls_col:
+            has_table = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+                "WHERE table_name='subscriptions')"
+            )
+            if has_table:
+                print("Adding LS columns to subscriptions...")
+                await conn.execute("""
+                    ALTER TABLE subscriptions
+                        ADD COLUMN IF NOT EXISTS ls_subscription_id TEXT,
+                        ADD COLUMN IF NOT EXISTS ls_checkout_id TEXT;
+                    ALTER TABLE subscription_payments
+                        ADD COLUMN IF NOT EXISTS ls_invoice_id TEXT;
+                """)
+                print("LS columns added.")
+
+
 async def get_pool() -> Pool:
     """Get or create database connection pool."""
     global _pool
     if _pool is None:
         _pool = await create_pool()
+        await _run_startup_migrations(_pool)
     return _pool
 
 

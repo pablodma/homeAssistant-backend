@@ -1,27 +1,25 @@
-"""Subscription service for business logic and Mercado Pago integration."""
+"""Subscription service for business logic and Lemon Squeezy integration."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from ..config.mercadopago import get_mp_client
+from ..config.lemonsqueezy import PLAN_VARIANT_MAP, get_ls_client
 from ..repositories import coupon_repo, plan_pricing_repo, subscription_repo
 from ..schemas.subscription import (
     SubscriptionCreateResponse,
     SubscriptionStatusResponse,
-    WebhookPayload,
-    WebhookResponse,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class SubscriptionService:
-    """Service for managing subscriptions with Mercado Pago."""
+    """Service for managing subscriptions with Lemon Squeezy."""
 
     def __init__(self) -> None:
-        self.mp_client = get_mp_client()
+        self.ls_client = get_ls_client()
 
     async def create_subscription(
         self,
@@ -29,24 +27,29 @@ class SubscriptionService:
         plan_type: str,
         payer_email: str,
         coupon_code: str | None = None,
-        back_url: str | None = None,
+        redirect_url: str | None = None,
     ) -> SubscriptionCreateResponse:
         """
         Create a new subscription for a tenant.
-        
+
         Args:
             tenant_id: The tenant ID
-            plan_type: Plan type (family or premium)
-            payer_email: Payer's email for MP
+            plan_type: Plan type (starter, family or premium)
+            payer_email: Payer's email
             coupon_code: Optional coupon code for discount
-            back_url: URL to redirect after payment
-            
+            redirect_url: Optional redirect URL after LS checkout (from frontend origin)
+
         Returns:
             SubscriptionCreateResponse with checkout URL and pricing
         """
         # Validate plan type
-        if plan_type not in ("family", "premium"):
+        if plan_type not in ("starter", "family", "premium"):
             raise ValueError(f"Invalid plan type: {plan_type}")
+
+        # Get variant ID for this plan
+        variant_id = PLAN_VARIANT_MAP.get(plan_type)
+        if not variant_id:
+            raise ValueError(f"No Lemon Squeezy variant configured for plan: {plan_type}")
 
         # Get plan pricing from DB
         plan = await plan_pricing_repo.get_plan_by_type(plan_type)
@@ -65,7 +68,7 @@ class SubscriptionService:
                 plan_type=plan_type,
                 tenant_id=tenant_id,
             )
-            
+
             if not is_valid:
                 raise ValueError(error or "Invalid coupon")
 
@@ -84,29 +87,35 @@ class SubscriptionService:
 
         checkout_url = None
 
-        # Create MP subscription (inline preapproval) if configured
-        if self.mp_client.is_configured:
-            preapproval = self.mp_client.create_subscription(
-                reason=f"HomeAI {plan['name']}",
-                price=float(final_price),
-                payer_email=payer_email,
-                external_reference=str(subscription["id"]),
-                currency=plan.get("currency", "ARS"),
-                back_url=back_url,
+        # Create Lemon Squeezy checkout if configured
+        if self.ls_client.is_configured:
+            # LS uses cents for custom prices
+            custom_price_cents = int(final_price * 100) if coupon_code else None
+
+            checkout = await self.ls_client.create_checkout(
+                variant_id=variant_id,
+                email=payer_email,
+                custom_data={
+                    "tenant_id": str(tenant_id),
+                    "subscription_id": str(subscription["id"]),
+                    "plan_type": plan_type,
+                },
+                redirect_url=redirect_url,
+                custom_price=custom_price_cents,
+                discount_code=coupon_code if not custom_price_cents else None,
             )
 
-            if preapproval:
-                # Update subscription with MP data
+            if checkout:
+                # Update subscription with LS checkout ID
                 await subscription_repo.update_subscription(
                     subscription_id=subscription["id"],
-                    mp_preapproval_id=preapproval["id"],
-                    mp_payer_id=preapproval.get("payer_id"),
+                    ls_checkout_id=checkout["id"],
                 )
-                checkout_url = preapproval.get("init_point")
+                checkout_url = checkout["url"]
             else:
-                # MP failed to create subscription – mark as cancelled and raise error
+                # LS failed to create checkout – mark as cancelled and raise error
                 logger.error(
-                    f"MP failed to create preapproval for subscription {subscription['id']}. "
+                    f"LS failed to create checkout for subscription {subscription['id']}. "
                     f"Plan: {plan_type}, price: {final_price}, email: {payer_email}"
                 )
                 await subscription_repo.update_subscription_status(
@@ -114,13 +123,12 @@ class SubscriptionService:
                     status="cancelled",
                 )
                 raise RuntimeError(
-                    f"No se pudo crear la suscripción en Mercado Pago. "
-                    f"Verifica que el precio del plan ({final_price} {plan.get('currency', 'ARS')}) "
-                    f"sea válido (mínimo $15 ARS)."
+                    f"No se pudo crear el checkout en Lemon Squeezy. "
+                    f"Verifica que el plan ({plan_type}) esté correctamente configurado."
                 )
         else:
-            # MP not configured – cannot process paid plans
-            logger.error("Mercado Pago is not configured – cannot process paid subscription")
+            # LS not configured – cannot process paid plans
+            logger.error("Lemon Squeezy is not configured – cannot process paid subscription")
             await subscription_repo.update_subscription_status(
                 subscription_id=subscription["id"],
                 status="cancelled",
@@ -172,7 +180,7 @@ class SubscriptionService:
     ) -> tuple[bool, str]:
         """
         Cancel a subscription.
-        
+
         Returns:
             Tuple of (success, message)
         """
@@ -184,18 +192,22 @@ class SubscriptionService:
         if subscription["status"] not in ("authorized", "paused"):
             return False, f"Cannot cancel subscription in status: {subscription['status']}"
 
-        # Cancel in MP if we have a preapproval ID
-        if subscription.get("mp_preapproval_id") and self.mp_client.is_configured:
-            success = self.mp_client.cancel_preapproval(subscription["mp_preapproval_id"])
+        # Cancel in Lemon Squeezy if we have a subscription ID
+        if subscription.get("ls_subscription_id") and self.ls_client.is_configured:
+            success = await self.ls_client.cancel_subscription(
+                subscription["ls_subscription_id"]
+            )
             if not success:
-                logger.error(f"Failed to cancel MP preapproval: {subscription['mp_preapproval_id']}")
+                logger.error(
+                    f"Failed to cancel LS subscription: {subscription['ls_subscription_id']}"
+                )
                 # Continue with local cancellation anyway
 
         # Update subscription status
         await subscription_repo.update_subscription_status(
             subscription_id=subscription["id"],
             status="cancelled",
-            cancelled_at=datetime.utcnow(),
+            cancelled_at=datetime.now(timezone.utc),
         )
 
         # Downgrade tenant to starter plan
@@ -221,11 +233,15 @@ class SubscriptionService:
         if subscription["status"] != "authorized":
             return False, f"Cannot pause subscription in status: {subscription['status']}"
 
-        # Pause in MP
-        if subscription.get("mp_preapproval_id") and self.mp_client.is_configured:
-            success = self.mp_client.pause_preapproval(subscription["mp_preapproval_id"])
+        # Pause in Lemon Squeezy
+        if subscription.get("ls_subscription_id") and self.ls_client.is_configured:
+            success = await self.ls_client.pause_subscription(
+                subscription["ls_subscription_id"]
+            )
             if not success:
-                logger.error(f"Failed to pause MP preapproval: {subscription['mp_preapproval_id']}")
+                logger.error(
+                    f"Failed to pause LS subscription: {subscription['ls_subscription_id']}"
+                )
 
         # Update subscription status
         await subscription_repo.update_subscription_status(
@@ -235,194 +251,248 @@ class SubscriptionService:
 
         return True, "Subscription paused successfully"
 
-    async def process_webhook(
+    async def process_ls_webhook(
         self,
-        payload: WebhookPayload,
-        x_signature: str | None = None,
-        x_request_id: str | None = None,
-    ) -> WebhookResponse:
+        event_name: str,
+        data: dict,
+        meta: dict,
+    ) -> dict:
         """
-        Process webhook from Mercado Pago.
-        
-        Args:
-            payload: Webhook payload
-            x_signature: Signature header for validation
-            x_request_id: Request ID header
-            
-        Returns:
-            WebhookResponse
-        """
-        logger.info(f"Processing webhook: action={payload.action}, type={payload.type}")
+        Process webhook from Lemon Squeezy.
 
-        # Verify signature if we have webhook secret configured
-        if x_signature and x_request_id and self.mp_client.webhook_secret:
-            is_valid = self.mp_client.verify_webhook_signature(
-                x_signature=x_signature,
-                x_request_id=x_request_id,
-                data_id=payload.data.id,
-            )
-            if not is_valid:
-                logger.warning("Invalid webhook signature")
-                return WebhookResponse(received=True, processed=False, message="Invalid signature")
+        Args:
+            event_name: The webhook event name (e.g. subscription_created)
+            data: The resource data from LS
+            meta: The meta object with custom_data
+
+        Returns:
+            dict with processing result
+        """
+        logger.info(f"Processing LS webhook: event={event_name}")
 
         try:
-            if payload.type == "subscription_preapproval":
-                await self._process_preapproval_webhook(payload)
-            elif payload.type == "payment":
-                await self._process_payment_webhook(payload)
+            if event_name in ("subscription_created", "subscription_updated"):
+                await self._process_subscription_event(event_name, data, meta)
+            elif event_name == "subscription_cancelled":
+                await self._process_subscription_cancelled(data, meta)
+            elif event_name in (
+                "subscription_payment_success",
+                "subscription_payment_failed",
+            ):
+                await self._process_payment_event(event_name, data, meta)
+            elif event_name == "order_created":
+                await self._process_order_created(data, meta)
             else:
-                logger.info(f"Unhandled webhook type: {payload.type}")
-                return WebhookResponse(received=True, processed=False, message="Unhandled type")
+                logger.info(f"Unhandled LS webhook event: {event_name}")
+                return {"processed": False, "message": f"Unhandled event: {event_name}"}
 
-            return WebhookResponse(received=True, processed=True)
+            return {"processed": True}
 
         except Exception as e:
-            logger.exception(f"Error processing webhook: {e}")
-            return WebhookResponse(received=True, processed=False, message=str(e))
+            logger.exception(f"Error processing LS webhook: {e}")
+            return {"processed": False, "message": str(e)}
 
-    async def _process_preapproval_webhook(self, payload: WebhookPayload) -> None:
-        """Process subscription preapproval webhook."""
-        if not self.mp_client.is_configured:
+    async def _process_subscription_event(
+        self, event_name: str, data: dict, meta: dict
+    ) -> None:
+        """Process subscription_created or subscription_updated event."""
+        attrs = data.get("attributes", {})
+        ls_sub_id = str(data.get("id", ""))
+        ls_status = attrs.get("status", "")
+        custom_data = meta.get("custom_data", {})
+
+        subscription_id_str = custom_data.get("subscription_id")
+        tenant_id_str = custom_data.get("tenant_id")
+
+        if not subscription_id_str:
+            logger.warning(f"No subscription_id in LS webhook custom_data: {custom_data}")
             return
 
-        # Get preapproval details from MP
-        preapproval = self.mp_client.get_preapproval(payload.data.id)
-        if not preapproval:
-            logger.error(f"Could not fetch preapproval: {payload.data.id}")
-            return
+        subscription_id = UUID(subscription_id_str)
 
-        # Find our subscription
-        subscription = await subscription_repo.get_subscription_by_mp_id(payload.data.id)
-        if not subscription:
-            logger.warning(f"Subscription not found for preapproval: {payload.data.id}")
-            return
-
-        # Map MP status to our status
-        mp_status = preapproval.get("status", "").lower()
+        # Map LS status to our status
         status_map = {
-            "authorized": "authorized",
-            "pending": "pending",
+            "active": "authorized",
+            "on_trial": "authorized",
             "paused": "paused",
+            "past_due": "authorized",  # Still active, just payment issue
+            "unpaid": "pending",
             "cancelled": "cancelled",
+            "expired": "ended",
         }
-        our_status = status_map.get(mp_status, subscription["status"])
+        our_status = status_map.get(ls_status, "pending")
 
-        # Update subscription
+        # Update subscription with LS data
         await subscription_repo.update_subscription(
-            subscription_id=subscription["id"],
+            subscription_id=subscription_id,
+            ls_subscription_id=ls_sub_id,
             status=our_status,
-            current_period_start=preapproval.get("date_created"),
-            current_period_end=preapproval.get("next_payment_date"),
-            mp_payer_id=preapproval.get("payer_id"),
+            current_period_start=attrs.get("renews_at"),
+            current_period_end=attrs.get("ends_at"),
         )
 
-        # Update tenant plan if authorized
-        if our_status == "authorized":
+        # Update tenant plan if subscription is active
+        if our_status == "authorized" and tenant_id_str:
+            tenant_id = UUID(tenant_id_str)
+            plan_type = custom_data.get("plan_type", "starter")
             await subscription_repo.update_tenant_plan(
-                tenant_id=subscription["tenant_id"],
-                plan=subscription["plan_type"],
-                subscription_id=subscription["id"],
+                tenant_id=tenant_id,
+                plan=plan_type,
+                subscription_id=subscription_id,
             )
 
-        logger.info(f"Updated subscription {subscription['id']} to status: {our_status}")
+        logger.info(
+            f"Updated subscription {subscription_id} from LS event {event_name}: "
+            f"ls_status={ls_status} -> our_status={our_status}"
+        )
 
-    async def _process_payment_webhook(self, payload: WebhookPayload) -> None:
-        """Process payment webhook."""
-        if not self.mp_client.is_configured:
+    async def _process_subscription_cancelled(self, data: dict, meta: dict) -> None:
+        """Process subscription_cancelled event."""
+        custom_data = meta.get("custom_data", {})
+        subscription_id_str = custom_data.get("subscription_id")
+        tenant_id_str = custom_data.get("tenant_id")
+
+        if not subscription_id_str:
+            logger.warning("No subscription_id in LS cancellation webhook")
             return
 
-        # Check if we already processed this payment
-        existing = await subscription_repo.get_payment_by_mp_id(payload.data.id)
-        if existing:
-            logger.info(f"Payment already processed: {payload.data.id}")
+        subscription_id = UUID(subscription_id_str)
+
+        await subscription_repo.update_subscription_status(
+            subscription_id=subscription_id,
+            status="cancelled",
+            cancelled_at=datetime.now(timezone.utc),
+        )
+
+        # Downgrade to starter
+        if tenant_id_str:
+            await subscription_repo.update_tenant_plan(
+                tenant_id=UUID(tenant_id_str),
+                plan="starter",
+                subscription_id=None,
+            )
+
+        logger.info(f"Subscription {subscription_id} cancelled via LS webhook")
+
+    async def _process_payment_event(
+        self, event_name: str, data: dict, meta: dict
+    ) -> None:
+        """Process payment success/failure events."""
+        attrs = data.get("attributes", {})
+        custom_data = meta.get("custom_data", {})
+
+        subscription_id_str = custom_data.get("subscription_id")
+        tenant_id_str = custom_data.get("tenant_id")
+
+        if not subscription_id_str or not tenant_id_str:
+            logger.warning("Missing subscription_id or tenant_id in payment webhook")
             return
 
-        # Get payment details from MP
-        payment = self.mp_client.get_payment(payload.data.id)
-        if not payment:
-            logger.error(f"Could not fetch payment: {payload.data.id}")
-            return
+        subscription_id = UUID(subscription_id_str)
+        tenant_id = UUID(tenant_id_str)
 
-        # Find subscription by external reference
-        external_ref = payment.get("external_reference")
-        if not external_ref:
-            logger.warning(f"Payment {payload.data.id} has no external_reference")
-            return
-
-        subscription = await subscription_repo.get_subscription_by_id(UUID(external_ref))
-        if not subscription:
-            logger.warning(f"Subscription not found: {external_ref}")
-            return
-
-        # Create payment record
-        status_map = {
-            "approved": "approved",
-            "pending": "pending",
-            "rejected": "rejected",
-            "refunded": "refunded",
-        }
-        payment_status = status_map.get(payment.get("status", ""), "pending")
+        ls_invoice_id = str(data.get("id", ""))
+        amount = Decimal(str(attrs.get("total", 0))) / 100  # LS sends cents
+        is_success = event_name == "subscription_payment_success"
 
         await subscription_repo.create_payment(
-            tenant_id=subscription["tenant_id"],
-            subscription_id=subscription["id"],
-            mp_payment_id=payload.data.id,
-            amount=Decimal(str(payment.get("transaction_amount", 0))),
-            currency=payment.get("currency_id", "ARS"),
-            status=payment_status,
-            paid_at=datetime.utcnow() if payment_status == "approved" else None,
+            tenant_id=tenant_id,
+            subscription_id=subscription_id,
+            ls_invoice_id=ls_invoice_id,
+            amount=amount,
+            currency="USD",
+            status="approved" if is_success else "rejected",
+            paid_at=datetime.now(timezone.utc) if is_success else None,
         )
 
-        # Update subscription status if payment approved
-        if payment_status == "approved" and subscription["status"] == "pending":
+        logger.info(
+            f"Payment {'success' if is_success else 'failed'} for subscription "
+            f"{subscription_id}: ${amount}"
+        )
+
+    async def _process_order_created(self, data: dict, meta: dict) -> None:
+        """Process order_created event (first payment)."""
+        attrs = data.get("attributes", {})
+        custom_data = meta.get("custom_data", {})
+
+        subscription_id_str = custom_data.get("subscription_id")
+        tenant_id_str = custom_data.get("tenant_id")
+        plan_type = custom_data.get("plan_type", "starter")
+
+        if not subscription_id_str or not tenant_id_str:
+            logger.warning("Missing IDs in order_created webhook")
+            return
+
+        subscription_id = UUID(subscription_id_str)
+        tenant_id = UUID(tenant_id_str)
+
+        # Activate subscription on first successful order
+        status = attrs.get("status", "")
+        if status == "paid":
             await subscription_repo.update_subscription_status(
-                subscription_id=subscription["id"],
+                subscription_id=subscription_id,
                 status="authorized",
             )
-            
-            # Update tenant plan
             await subscription_repo.update_tenant_plan(
-                tenant_id=subscription["tenant_id"],
-                plan=subscription["plan_type"],
-                subscription_id=subscription["id"],
+                tenant_id=tenant_id,
+                plan=plan_type,
+                subscription_id=subscription_id,
             )
 
-        logger.info(f"Processed payment {payload.data.id} for subscription {subscription['id']}")
+            # Record the payment
+            amount = Decimal(str(attrs.get("total", 0))) / 100
+            await subscription_repo.create_payment(
+                tenant_id=tenant_id,
+                subscription_id=subscription_id,
+                ls_invoice_id=str(data.get("id", "")),
+                amount=amount,
+                currency="USD",
+                status="approved",
+                paid_at=datetime.now(timezone.utc),
+            )
+
+            logger.info(
+                f"Order created & subscription {subscription_id} activated for tenant {tenant_id}"
+            )
 
     async def sync_subscription_status(
         self,
         subscription_id: UUID,
     ) -> dict | None:
         """
-        Sync subscription status with Mercado Pago.
-        
-        Call this to ensure local data matches MP.
+        Sync subscription status with Lemon Squeezy.
+
+        Call this to ensure local data matches LS.
         """
         subscription = await subscription_repo.get_subscription_by_id(subscription_id)
-        if not subscription or not subscription.get("mp_preapproval_id"):
+        if not subscription or not subscription.get("ls_subscription_id"):
             return subscription
 
-        if not self.mp_client.is_configured:
+        if not self.ls_client.is_configured:
             return subscription
 
-        preapproval = self.mp_client.get_preapproval(subscription["mp_preapproval_id"])
-        if not preapproval:
+        ls_sub = await self.ls_client.get_subscription(subscription["ls_subscription_id"])
+        if not ls_sub:
             return subscription
 
         # Map and update status
-        mp_status = preapproval.get("status", "").lower()
+        attrs = ls_sub.get("attributes", {})
+        ls_status = attrs.get("status", "")
         status_map = {
-            "authorized": "authorized",
-            "pending": "pending",
+            "active": "authorized",
+            "on_trial": "authorized",
             "paused": "paused",
+            "past_due": "authorized",
+            "unpaid": "pending",
             "cancelled": "cancelled",
+            "expired": "ended",
         }
-        our_status = status_map.get(mp_status, subscription["status"])
+        our_status = status_map.get(ls_status, subscription["status"])
 
         return await subscription_repo.update_subscription(
             subscription_id=subscription_id,
             status=our_status,
-            current_period_end=preapproval.get("next_payment_date"),
+            current_period_end=attrs.get("ends_at"),
         )
 
 

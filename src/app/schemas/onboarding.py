@@ -1,4 +1,4 @@
-"""Onboarding schemas for tenant creation and phone registration."""
+"""Onboarding schemas for tenant creation and member management."""
 
 from datetime import datetime
 from typing import Literal
@@ -15,6 +15,7 @@ class PhoneMember(BaseModel):
     phone: str = Field(..., description="Phone number in E.164 format (+5491112345678)")
     name: str = Field(..., min_length=1, max_length=100, description="Member display name")
     role: Literal["admin", "member"] = Field(default="member", description="Member role")
+    email: str | None = Field(default=None, description="Optional email for web login")
     
     @field_validator("phone")
     @classmethod
@@ -24,6 +25,17 @@ class PhoneMember(BaseModel):
         if not re.match(r"^\+\d{10,15}$", v):
             raise ValueError("Phone must be in E.164 format (e.g., +5491112345678)")
         return v
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str | None) -> str | None:
+        """Validate email format if provided."""
+        if v is None or v == "":
+            return None
+        import re
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+            raise ValueError("Invalid email format")
+        return v.lower().strip()
 
 
 class OnboardingRequest(BaseModel):
@@ -64,15 +76,19 @@ class OnboardingStatusResponse(BaseModel):
     home_name: str | None = None
 
 
-class PhoneTenantMapping(BaseSchema):
-    """Phone to tenant mapping response."""
+class MemberResponse(BaseSchema):
+    """A member of a tenant/account."""
     
-    phone: str
-    tenant_id: UUID
-    user_id: UUID | None = None
+    id: UUID
+    phone: str | None = None
+    email: str | None = None
     display_name: str | None = None
-    is_primary: bool = False
-    verified_at: datetime | None = None
+    role: str = "member"
+    phone_verified: bool = False
+    email_verified: bool = False
+    avatar_url: str | None = None
+    is_active: bool = True
+    created_at: datetime | None = None
 
 
 class PhoneLookupResponse(BaseModel):
@@ -84,12 +100,13 @@ class PhoneLookupResponse(BaseModel):
     home_name: str | None = None
 
 
-class RegisterPhoneRequest(BaseModel):
-    """Request to register a phone number to a tenant."""
+class AddMemberRequest(BaseModel):
+    """Request to add a member to a tenant."""
     
     phone: str = Field(..., description="Phone number in E.164 format")
     display_name: str = Field(..., min_length=1, max_length=100)
-    is_primary: bool = Field(default=False)
+    role: Literal["admin", "member"] = Field(default="member")
+    email: str | None = Field(default=None, description="Optional email for web login")
     
     @field_validator("phone")
     @classmethod

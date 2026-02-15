@@ -6,9 +6,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
+from ..config.lemonsqueezy import get_ls_client
 from ..middleware.auth import CurrentUser, get_current_user
 from ..repositories import subscription_repo
 from ..schemas.subscription import (
+    LemonSqueezyWebhookResponse,
     PaymentListResponse,
     SubscriptionCancelRequest,
     SubscriptionCancelResponse,
@@ -17,8 +19,6 @@ from ..schemas.subscription import (
     SubscriptionPaymentResponse,
     SubscriptionResponse,
     SubscriptionStatusResponse,
-    WebhookPayload,
-    WebhookResponse,
 )
 from ..services.subscription import get_subscription_service
 
@@ -34,17 +34,17 @@ async def create_subscription(
 ) -> SubscriptionCreateResponse:
     """
     Create a new subscription for the current tenant.
-    
+
     This endpoint:
     1. Validates the plan type and optional coupon code
     2. Creates a subscription record in our database
-    3. Creates a preapproval in Mercado Pago
+    3. Creates a checkout in Lemon Squeezy
     4. Returns the checkout URL for payment
     """
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User must belong to a tenant to subscribe"
+            detail="User must belong to a tenant to subscribe",
         )
 
     service = get_subscription_service()
@@ -55,18 +55,13 @@ async def create_subscription(
             plan_type=request.plan_type,
             payer_email=request.payer_email,
             coupon_code=request.coupon_code,
+            redirect_url=request.redirect_url,
         )
         return result
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except RuntimeError as e:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 
 
 @router.get("/me", response_model=SubscriptionStatusResponse)
@@ -77,7 +72,7 @@ async def get_my_subscription(
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User must belong to a tenant"
+            detail="User must belong to a tenant",
         )
 
     service = get_subscription_service()
@@ -96,7 +91,7 @@ async def cancel_subscription(
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User must belong to a tenant"
+            detail="User must belong to a tenant",
         )
 
     service = get_subscription_service()
@@ -119,7 +114,7 @@ async def pause_subscription(
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User must belong to a tenant"
+            detail="User must belong to a tenant",
         )
 
     service = get_subscription_service()
@@ -128,10 +123,7 @@ async def pause_subscription(
     )
 
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=message
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message)
 
     return {"success": success, "message": message}
 
@@ -146,7 +138,7 @@ async def get_my_payments(
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User must belong to a tenant"
+            detail="User must belong to a tenant",
         )
 
     payments = await subscription_repo.get_payments_by_tenant(
@@ -157,7 +149,7 @@ async def get_my_payments(
 
     return PaymentListResponse(
         items=[SubscriptionPaymentResponse(**p) for p in payments],
-        total=len(payments),  # TODO: Get actual total count
+        total=len(payments),
     )
 
 
@@ -166,14 +158,14 @@ async def sync_subscription(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> SubscriptionResponse | None:
     """
-    Sync subscription status with Mercado Pago.
-    
+    Sync subscription status with Lemon Squeezy.
+
     Call this if you suspect local data is out of sync.
     """
     if not current_user.tenant_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User must belong to a tenant"
+            detail="User must belong to a tenant",
         )
 
     subscription = await subscription_repo.get_subscription_by_tenant(current_user.tenant_id)
@@ -186,30 +178,60 @@ async def sync_subscription(
 
 
 # =============================================================================
-# Webhook endpoint (public, validated by signature)
+# Webhook endpoint (public, validated by HMAC signature)
 # =============================================================================
 
 webhook_router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 
 
-@webhook_router.post("/mercadopago", response_model=WebhookResponse)
-async def mercadopago_webhook(
-    payload: WebhookPayload,
+@webhook_router.post("/lemonsqueezy", response_model=LemonSqueezyWebhookResponse)
+async def lemonsqueezy_webhook(
     request: Request,
-    x_signature: Annotated[str | None, Header()] = None,
-    x_request_id: Annotated[str | None, Header()] = None,
-) -> WebhookResponse:
+    x_signature: Annotated[str | None, Header(alias="x-signature")] = None,
+) -> LemonSqueezyWebhookResponse:
     """
-    Receive webhooks from Mercado Pago.
-    
-    This endpoint processes payment and subscription events.
-    The signature is validated using the webhook secret.
+    Receive webhooks from Lemon Squeezy.
+
+    This endpoint processes subscription and payment events.
+    The signature is validated using HMAC-SHA256 with the webhook secret.
     """
-    logger.info(f"Received MP webhook: action={payload.action}, type={payload.type}")
+    # Read raw body for signature verification
+    body = await request.body()
+
+    # Verify signature
+    ls_client = get_ls_client()
+    if x_signature:
+        if not ls_client.verify_webhook_signature(body, x_signature):
+            logger.warning("Invalid LS webhook signature")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid webhook signature",
+            )
+
+    # Parse JSON body
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON payload",
+        )
+
+    event_name = payload.get("meta", {}).get("event_name", "unknown")
+    data = payload.get("data", {})
+    meta = payload.get("meta", {})
+
+    logger.info(f"Received LS webhook: event={event_name}, data_id={data.get('id')}")
 
     service = get_subscription_service()
-    return await service.process_webhook(
-        payload=payload,
-        x_signature=x_signature,
-        x_request_id=x_request_id,
+    result = await service.process_ls_webhook(
+        event_name=event_name,
+        data=data,
+        meta=meta,
+    )
+
+    return LemonSqueezyWebhookResponse(
+        received=True,
+        processed=result.get("processed", False),
+        message=result.get("message"),
     )

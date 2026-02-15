@@ -149,6 +149,12 @@ homeai-api/
 | GET | `/api/v1/tenants/{id}/calendar/oauth/url` | URL OAuth Google |
 | GET | `/api/v1/tenants/{id}/calendar/oauth/callback` | Callback OAuth |
 
+### Onboarding y Phone Lookup
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| POST | `/api/v1/onboarding` | Completar onboarding (crear tenant + registrar phones) |
+| GET | `/api/v1/phone/lookup?phone={phone}` | Resolución pública phone → tenant (usado por bot) |
+
 ### Admin
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
@@ -176,6 +182,7 @@ homeai-api/
 | `agent_interactions` | Bot | Log de interacciones |
 | `chat_sessions` | Bot | Sesiones de chat |
 | `chat_messages` | Bot | Mensajes de chat |
+| `phone_tenant_mapping` | Backend | Teléfono → tenant (llenado en onboarding) |
 | `reminders` | Bot | Recordatorios |
 | `shopping_items` | Bot | Items de listas de compras |
 | `vehicles` | Bot | Vehículos |

@@ -23,12 +23,14 @@ PaymentStatus = Literal["approved", "pending", "rejected", "refunded"]
 # Subscription Schemas
 # =============================================================================
 
+
 class SubscriptionCreate(BaseModel):
     """Request to create a new subscription."""
 
-    plan_type: Literal["family", "premium"]
+    plan_type: Literal["starter", "family", "premium"]
     payer_email: EmailStr
     coupon_code: str | None = None
+    redirect_url: str | None = None  # Frontend origin-based redirect URL for LS checkout
 
 
 class SubscriptionResponse(BaseSchema, TimestampMixin):
@@ -36,7 +38,8 @@ class SubscriptionResponse(BaseSchema, TimestampMixin):
 
     id: UUID
     tenant_id: UUID
-    mp_preapproval_id: str | None = None
+    ls_subscription_id: str | None = None
+    ls_checkout_id: str | None = None
     plan_type: PlanType
     status: SubscriptionStatus
     current_period_start: datetime | None = None
@@ -69,13 +72,14 @@ class SubscriptionStatusResponse(BaseModel):
 # Subscription Payment Schemas
 # =============================================================================
 
+
 class SubscriptionPaymentResponse(BaseSchema):
     """Subscription payment record."""
 
     id: UUID
     subscription_id: UUID | None
     tenant_id: UUID
-    mp_payment_id: str | None
+    ls_invoice_id: str | None = None
     amount: float
     currency: str
     status: PaymentStatus
@@ -94,27 +98,9 @@ class PaymentListResponse(BaseModel):
 # Webhook Schemas
 # =============================================================================
 
-class WebhookData(BaseModel):
-    """Data payload in webhook."""
 
-    id: str
-
-
-class WebhookPayload(BaseModel):
-    """Mercado Pago webhook payload."""
-
-    id: int | None = None
-    live_mode: bool = False
-    type: str
-    date_created: str | None = None
-    user_id: int | None = None
-    api_version: str | None = None
-    action: str
-    data: WebhookData
-
-
-class WebhookResponse(BaseModel):
-    """Response to webhook."""
+class LemonSqueezyWebhookResponse(BaseModel):
+    """Response to Lemon Squeezy webhook."""
 
     received: bool = True
     processed: bool = False
@@ -124,6 +110,7 @@ class WebhookResponse(BaseModel):
 # =============================================================================
 # Cancel/Pause Schemas
 # =============================================================================
+
 
 class SubscriptionCancelRequest(BaseModel):
     """Request to cancel subscription."""

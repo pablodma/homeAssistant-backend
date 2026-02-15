@@ -83,47 +83,63 @@ class OnboardingRepository:
             user_id,
         )
 
-    async def register_phone(
+    async def create_member(
         self,
-        phone: str,
         tenant_id: UUID,
-        user_id: UUID | None,
+        phone: str,
         display_name: str,
-        is_primary: bool = False,
+        role: str = "member",
+        email: str | None = None,
     ) -> UUID:
         """
-        Register a phone number to a tenant.
+        Create a new user (member) in a tenant.
         
-        Creates the mapping and optionally links to a user.
+        Used during onboarding to create user records for household members.
         """
         pool = await get_pool()
         
+        normalized_phone = self._normalize_phone(phone)
+        
         query = """
-            INSERT INTO phone_tenant_mapping (
-                phone, tenant_id, user_id, display_name, is_primary, verified_at
+            INSERT INTO users (
+                tenant_id, phone, email, display_name, role,
+                phone_verified, is_active, auth_provider, created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (phone) DO UPDATE SET
+            VALUES ($1, $2, $3, $4, $5, false, true, 'whatsapp', NOW())
+            ON CONFLICT (phone) WHERE phone IS NOT NULL DO UPDATE SET
                 tenant_id = EXCLUDED.tenant_id,
-                user_id = EXCLUDED.user_id,
                 display_name = EXCLUDED.display_name,
-                is_primary = EXCLUDED.is_primary,
-                verified_at = EXCLUDED.verified_at,
-                updated_at = NOW()
+                role = EXCLUDED.role,
+                email = COALESCE(EXCLUDED.email, users.email)
             RETURNING id
         """
         
-        mapping_id = await pool.fetchval(
+        user_id = await pool.fetchval(
             query,
-            phone,
             tenant_id,
-            user_id,
+            normalized_phone,
+            email,
             display_name,
-            is_primary,
-            datetime.now(timezone.utc),
+            role,
         )
         
-        return UUID(str(mapping_id))
+        return UUID(str(user_id))
+
+    async def update_user_phone(
+        self,
+        user_id: UUID,
+        phone: str,
+    ) -> None:
+        """Update an existing user's phone number (e.g., owner adding their WhatsApp)."""
+        pool = await get_pool()
+        
+        normalized_phone = self._normalize_phone(phone)
+        
+        await pool.execute(
+            "UPDATE users SET phone = $1 WHERE id = $2",
+            normalized_phone,
+            user_id,
+        )
 
     def _normalize_phone(self, phone: str) -> str:
         """
@@ -142,6 +158,7 @@ class OnboardingRepository:
         Get tenant info by phone number.
         
         Used by the bot for multitenancy resolution.
+        Looks up directly in the users table (source of truth).
         Normalizes the phone number to E.164 format before lookup.
         """
         pool = await get_pool()
@@ -151,60 +168,64 @@ class OnboardingRepository:
         
         query = """
             SELECT 
-                ptm.tenant_id,
-                ptm.user_id,
-                ptm.display_name as user_name,
-                ptm.is_primary,
+                u.tenant_id,
+                u.id as user_id,
+                u.display_name as user_name,
+                (u.role IN ('owner', 'admin')) as is_primary,
                 t.home_name,
                 t.plan,
                 t.timezone,
                 t.language,
                 t.currency
-            FROM phone_tenant_mapping ptm
-            JOIN tenants t ON ptm.tenant_id = t.id
-            WHERE ptm.phone = $1
+            FROM users u
+            JOIN tenants t ON u.tenant_id = t.id
+            WHERE u.phone = $1
+              AND u.is_active = true
         """
         
         row = await pool.fetchrow(query, normalized_phone)
         return dict(row) if row else None
 
-    async def get_phones_by_tenant(self, tenant_id: UUID) -> list[dict[str, Any]]:
-        """Get all phone mappings for a tenant."""
+    async def get_members_by_tenant(self, tenant_id: UUID) -> list[dict[str, Any]]:
+        """Get all members (users) for a tenant."""
         pool = await get_pool()
         
         query = """
             SELECT 
-                id, phone, user_id, display_name, is_primary, verified_at, created_at
-            FROM phone_tenant_mapping
+                id, phone, email, display_name, role, 
+                phone_verified, email_verified, avatar_url,
+                is_active, created_at
+            FROM users
             WHERE tenant_id = $1
-            ORDER BY is_primary DESC, created_at ASC
+              AND is_active = true
+            ORDER BY 
+                CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+                created_at ASC
         """
         
         rows = await pool.fetch(query, tenant_id)
         return [dict(row) for row in rows]
 
-    async def delete_phone_mapping(self, phone: str, tenant_id: UUID) -> bool:
-        """Remove a phone from a tenant. Returns True if deleted."""
+    async def remove_member(self, user_id: UUID, tenant_id: UUID) -> bool:
+        """Soft-delete a member from a tenant. Returns True if updated."""
         pool = await get_pool()
         
-        normalized_phone = self._normalize_phone(phone)
-        
         result = await pool.execute(
-            "DELETE FROM phone_tenant_mapping WHERE phone = $1 AND tenant_id = $2",
-            normalized_phone,
+            "UPDATE users SET is_active = false WHERE id = $1 AND tenant_id = $2",
+            user_id,
             tenant_id,
         )
         
-        return result == "DELETE 1"
+        return result == "UPDATE 1"
 
     async def check_phone_exists(self, phone: str) -> bool:
-        """Check if a phone is already registered."""
+        """Check if a phone is already registered to any user."""
         pool = await get_pool()
         
         normalized_phone = self._normalize_phone(phone)
         
         exists = await pool.fetchval(
-            "SELECT EXISTS(SELECT 1 FROM phone_tenant_mapping WHERE phone = $1)",
+            "SELECT EXISTS(SELECT 1 FROM users WHERE phone = $1 AND is_active = true)",
             normalized_phone,
         )
         

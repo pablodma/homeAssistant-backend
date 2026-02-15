@@ -75,12 +75,11 @@ async def find_or_create_oauth_user(google_user: GoogleUserInfo) -> AuthResult:
     """
     Find existing user by email or create new one with a new tenant.
     
-    For new users:
-    - Creates a new tenant (with onboarding_completed=false)
-    - Creates user as owner of that tenant
+    Lookup order:
+    1. Existing user with this email → return (could be owner or member added with email)
+    2. No match → create new user + tenant (new owner starting onboarding)
     
-    For existing users:
-    - Returns existing user and tenant info
+    Also updates avatar_url, last_login_at, and email_verified on every login.
     
     Args:
         google_user: Google user info from ID token
@@ -97,7 +96,7 @@ async def find_or_create_oauth_user(google_user: GoogleUserInfo) -> AuthResult:
             SELECT u.id, u.tenant_id, u.role, t.onboarding_completed
             FROM users u
             JOIN tenants t ON u.tenant_id = t.id
-            WHERE u.email = $1
+            WHERE u.email = $1 AND u.is_active = true
             ORDER BY u.created_at ASC
             LIMIT 1
             """,
@@ -105,15 +104,33 @@ async def find_or_create_oauth_user(google_user: GoogleUserInfo) -> AuthResult:
         )
         
         if row:
+            user_id = UUID(str(row["id"]))
+            
+            # Update profile info on every login
+            await conn.execute(
+                """
+                UPDATE users SET 
+                    avatar_url = $1,
+                    display_name = COALESCE(display_name, $2),
+                    email_verified = true,
+                    auth_provider = 'google',
+                    last_login_at = NOW()
+                WHERE id = $3
+                """,
+                google_user.get("picture"),
+                google_user.get("name"),
+                user_id,
+            )
+            
             return AuthResult(
-                user_id=UUID(str(row["id"])),
+                user_id=user_id,
                 tenant_id=UUID(str(row["tenant_id"])),
                 role=row["role"],
                 onboarding_completed=row["onboarding_completed"] or False,
                 is_new_user=False,
             )
         
-        # Create new tenant for this user (onboarding not completed)
+        # No existing user found → create new owner + tenant
         tenant_id = await conn.fetchval(
             """
             INSERT INTO tenants (name, onboarding_completed, settings)
@@ -124,19 +141,20 @@ async def find_or_create_oauth_user(google_user: GoogleUserInfo) -> AuthResult:
         )
         tenant_id = UUID(str(tenant_id))
         
-        # Create new user as owner of the tenant
+        # Create new user as owner (no phone yet - added during onboarding)
         user_id = await conn.fetchval(
             """
-            INSERT INTO users (tenant_id, email, phone, display_name, role, auth_provider)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO users (
+                tenant_id, email, display_name, role, auth_provider,
+                avatar_url, email_verified, is_active, last_login_at
+            )
+            VALUES ($1, $2, $3, 'owner', 'google', $4, true, true, NOW())
             RETURNING id
             """,
             tenant_id,
             google_user["email"],
-            f"oauth:{google_user['email']}",  # Placeholder phone for OAuth users
             google_user.get("name") or google_user["email"].split("@")[0],
-            "owner",  # New users are owners of their tenant
-            "google",
+            google_user.get("picture"),
         )
         user_id = UUID(str(user_id))
         
@@ -154,72 +172,6 @@ async def find_or_create_oauth_user(google_user: GoogleUserInfo) -> AuthResult:
             onboarding_completed=False,
             is_new_user=True,
         )
-
-
-async def find_or_create_user(
-    google_user: GoogleUserInfo,
-    tenant_id: UUID,
-) -> tuple[UUID, str]:
-    """
-    Find existing user by email or create new one.
-    
-    DEPRECATED: Use find_or_create_oauth_user instead for new implementations.
-    This is kept for backward compatibility with existing users.
-    
-    Args:
-        google_user: Google user info from ID token
-        tenant_id: Tenant to associate user with
-        
-    Returns:
-        Tuple of (user_id, role)
-    """
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
-        # Try to find existing user by email
-        row = await conn.fetchrow(
-            """
-            SELECT id, role FROM users 
-            WHERE email = $1 AND tenant_id = $2
-            """,
-            google_user["email"],
-            tenant_id,
-        )
-        
-        if row:
-            return UUID(str(row["id"])), row["role"]
-        
-        # Create new user
-        # Use email as phone placeholder for OAuth users (phone is required in schema)
-        user_id = await conn.fetchval(
-            """
-            INSERT INTO users (tenant_id, email, phone, display_name, role, auth_provider)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id
-            """,
-            tenant_id,
-            google_user["email"],
-            f"oauth:{google_user['email']}",  # Placeholder phone for OAuth users
-            google_user.get("name") or google_user["email"].split("@")[0],
-            "member",  # Default role for new users
-            "google",
-        )
-        
-        return UUID(str(user_id)), "member"
-
-
-async def get_default_tenant() -> UUID:
-    """
-    Get the default tenant ID.
-    
-    DEPRECATED: This function returns a hardcoded tenant ID and should not
-    be used for new users. Use find_or_create_oauth_user instead.
-    
-    Returns:
-        Default tenant UUID (for backward compatibility with existing users)
-    """
-    # Default tenant for backward compatibility
-    return UUID("00000000-0000-0000-0000-000000000001")
 
 
 def create_access_token(

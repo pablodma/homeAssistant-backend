@@ -49,14 +49,13 @@ class Settings(BaseSettings):
     github_repo: str = "pablodma/homeAssistant-asistant"  # owner/repo
     github_branch: str = "master"
 
-    # Frontend URL (para redirects de Mercado Pago)
+    # Frontend URL (para redirects post-pago)
     frontend_url: str = "http://localhost:3000"
 
-    # Mercado Pago
-    mp_access_token: str = ""  # Token privado de MP
-    mp_public_key: str = ""  # Clave publica para frontend
-    mp_webhook_secret: str = ""  # Para validar firma de webhooks (opcional)
-    mp_sandbox: bool = True  # True para ambiente de pruebas
+    # Lemon Squeezy
+    ls_api_key: str = ""  # API key de Lemon Squeezy
+    ls_store_id: str = "292594"  # Store ID
+    ls_webhook_secret: str = ""  # Para validar firma de webhooks
 
     # NOTE: Anthropic/QA Review AI logic moved to homeai-assis.
     # homeai-api only serves history + rollback (DB + GitHub operations).

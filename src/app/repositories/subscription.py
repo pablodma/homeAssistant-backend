@@ -12,11 +12,12 @@ from ..config.database import get_pool
 # Subscription Operations
 # =============================================================================
 
+
 async def create_subscription(
     tenant_id: UUID,
     plan_type: str,
-    mp_preapproval_id: str | None = None,
-    mp_payer_id: str | None = None,
+    ls_subscription_id: str | None = None,
+    ls_checkout_id: str | None = None,
     status: str = "pending",
 ) -> dict[str, Any]:
     """Create a new subscription."""
@@ -26,12 +27,16 @@ async def create_subscription(
         row = await conn.fetchrow(
             """
             INSERT INTO subscriptions (
-                tenant_id, plan_type, mp_preapproval_id, mp_payer_id, status
+                tenant_id, plan_type, ls_subscription_id, ls_checkout_id, status
             )
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
             """,
-            tenant_id, plan_type, mp_preapproval_id, mp_payer_id, status
+            tenant_id,
+            plan_type,
+            ls_subscription_id,
+            ls_checkout_id,
+            status,
         )
         return dict(row)
 
@@ -42,8 +47,7 @@ async def get_subscription_by_id(subscription_id: UUID) -> dict[str, Any] | None
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM subscriptions WHERE id = $1",
-            subscription_id
+            "SELECT * FROM subscriptions WHERE id = $1", subscription_id
         )
         return dict(row) if row else None
 
@@ -60,19 +64,19 @@ async def get_subscription_by_tenant(tenant_id: UUID) -> dict[str, Any] | None:
             ORDER BY created_at DESC
             LIMIT 1
             """,
-            tenant_id
+            tenant_id,
         )
         return dict(row) if row else None
 
 
-async def get_subscription_by_mp_id(mp_preapproval_id: str) -> dict[str, Any] | None:
-    """Get subscription by Mercado Pago preapproval ID."""
+async def get_subscription_by_ls_id(ls_subscription_id: str) -> dict[str, Any] | None:
+    """Get subscription by Lemon Squeezy subscription ID."""
     pool = await get_pool()
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM subscriptions WHERE mp_preapproval_id = $1",
-            mp_preapproval_id
+            "SELECT * FROM subscriptions WHERE ls_subscription_id = $1",
+            ls_subscription_id,
         )
         return dict(row) if row else None
 
@@ -88,7 +92,7 @@ async def update_subscription(
     fields = []
     values = []
     idx = 1
-    
+
     for key, value in kwargs.items():
         if value is not None:
             fields.append(f"{key} = ${idx}")
@@ -127,7 +131,9 @@ async def update_subscription_status(
             WHERE id = $1
             RETURNING *
             """,
-            subscription_id, status, cancelled_at
+            subscription_id,
+            status,
+            cancelled_at,
         )
         return dict(row) if row else None
 
@@ -147,7 +153,9 @@ async def update_tenant_plan(
             SET plan = $2, subscription_id = $3, updated_at = NOW()
             WHERE id = $1
             """,
-            tenant_id, plan, subscription_id
+            tenant_id,
+            plan,
+            subscription_id,
         )
         return result == "UPDATE 1"
 
@@ -156,13 +164,14 @@ async def update_tenant_plan(
 # Subscription Payment Operations
 # =============================================================================
 
+
 async def create_payment(
     tenant_id: UUID,
     amount: Decimal,
     status: str,
     subscription_id: UUID | None = None,
-    mp_payment_id: str | None = None,
-    currency: str = "ARS",
+    ls_invoice_id: str | None = None,
+    currency: str = "USD",
     paid_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Create a payment record."""
@@ -172,24 +181,30 @@ async def create_payment(
         row = await conn.fetchrow(
             """
             INSERT INTO subscription_payments (
-                tenant_id, subscription_id, mp_payment_id, amount, currency, status, paid_at
+                tenant_id, subscription_id, ls_invoice_id, amount, currency, status, paid_at
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
             """,
-            tenant_id, subscription_id, mp_payment_id, amount, currency, status, paid_at
+            tenant_id,
+            subscription_id,
+            ls_invoice_id,
+            amount,
+            currency,
+            status,
+            paid_at,
         )
         return dict(row)
 
 
-async def get_payment_by_mp_id(mp_payment_id: str) -> dict[str, Any] | None:
-    """Get payment by Mercado Pago payment ID."""
+async def get_payment_by_ls_id(ls_invoice_id: str) -> dict[str, Any] | None:
+    """Get payment by Lemon Squeezy invoice ID."""
     pool = await get_pool()
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM subscription_payments WHERE mp_payment_id = $1",
-            mp_payment_id
+            "SELECT * FROM subscription_payments WHERE ls_invoice_id = $1",
+            ls_invoice_id,
         )
         return dict(row) if row else None
 
@@ -210,7 +225,9 @@ async def get_payments_by_subscription(
             ORDER BY created_at DESC
             LIMIT $2 OFFSET $3
             """,
-            subscription_id, limit, offset
+            subscription_id,
+            limit,
+            offset,
         )
         return [dict(row) for row in rows]
 
@@ -231,7 +248,9 @@ async def get_payments_by_tenant(
             ORDER BY created_at DESC
             LIMIT $2 OFFSET $3
             """,
-            tenant_id, limit, offset
+            tenant_id,
+            limit,
+            offset,
         )
         return [dict(row) for row in rows]
 
@@ -252,68 +271,8 @@ async def update_payment_status(
             WHERE id = $1
             RETURNING *
             """,
-            payment_id, status, paid_at
+            payment_id,
+            status,
+            paid_at,
         )
         return dict(row) if row else None
-
-
-# =============================================================================
-# MP Plans Cache Operations
-# =============================================================================
-
-async def get_mp_plan_by_pricing(plan_pricing_id: UUID) -> dict[str, Any] | None:
-    """Get MP plan by plan_pricing_id."""
-    pool = await get_pool()
-
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT * FROM subscription_plans_mp 
-            WHERE plan_pricing_id = $1 AND mp_plan_status = 'active'
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            plan_pricing_id
-        )
-        return dict(row) if row else None
-
-
-async def create_mp_plan(
-    plan_pricing_id: UUID,
-    mp_plan_id: str,
-    synced_price: Decimal,
-) -> dict[str, Any]:
-    """Create MP plan cache entry."""
-    pool = await get_pool()
-
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO subscription_plans_mp (
-                plan_pricing_id, mp_plan_id, synced_price
-            )
-            VALUES ($1, $2, $3)
-            RETURNING *
-            """,
-            plan_pricing_id, mp_plan_id, synced_price
-        )
-        return dict(row)
-
-
-async def update_mp_plan_status(
-    mp_plan_id: str,
-    status: str,
-) -> bool:
-    """Update MP plan status."""
-    pool = await get_pool()
-
-    async with pool.acquire() as conn:
-        result = await conn.execute(
-            """
-            UPDATE subscription_plans_mp 
-            SET mp_plan_status = $2, last_synced_at = NOW()
-            WHERE mp_plan_id = $1
-            """,
-            mp_plan_id, status
-        )
-        return result == "UPDATE 1"
