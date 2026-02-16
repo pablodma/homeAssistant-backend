@@ -11,9 +11,12 @@ from ..repositories import calendar_repo
 from ..schemas.calendar import (
     AgentAvailabilityResponse,
     AgentCreateEventRequest,
+    AgentDeleteEventRequest,
     AgentDetectEventRequest,
     AgentDetectEventResponse,
     AgentListEventsRequest,
+    AgentSearchOperationResponse,
+    AgentUpdateEventRequest,
     DateRange,
     DetectedEvent,
     DuplicateCheckResponse,
@@ -589,6 +592,145 @@ async def agent_list_events(
         search_query=request.search_query,
         include_google=request.include_google,
         user_id_for_google=user_id_for_google,
+    )
+
+
+async def agent_search_and_update_event(
+    tenant_id: UUID,
+    request: AgentUpdateEventRequest,
+    user_phone: str | None = None,
+) -> AgentSearchOperationResponse:
+    """Search for an event by query and update it."""
+    if not request.search_query and not request.event_id:
+        return AgentSearchOperationResponse(
+            success=False,
+            message="Se necesita search_query o event_id para buscar el evento.",
+        )
+
+    if request.event_id:
+        candidates_records = [
+            await calendar_repo.get_event_by_id(tenant_id, request.event_id)
+        ]
+        candidates_records = [r for r in candidates_records if r]
+    else:
+        candidates_records = await calendar_repo.search_events(
+            tenant_id, request.search_query, limit=5
+        )
+
+    if request.event_date and candidates_records:
+        filtered = []
+        for r in candidates_records:
+            if r["start_datetime"].date() == request.event_date:
+                filtered.append(r)
+        if filtered:
+            candidates_records = filtered
+
+    if not candidates_records:
+        return AgentSearchOperationResponse(
+            success=False,
+            message="No encontré ningún evento que coincida con tu búsqueda.",
+        )
+
+    if len(candidates_records) > 1:
+        candidates = [_record_to_event_response(r) for r in candidates_records]
+        return AgentSearchOperationResponse(
+            success=False,
+            candidates=candidates,
+            message="Encontré varios eventos. ¿Cuál querés modificar?",
+        )
+
+    target = candidates_records[0]
+    user_id_for_sync = None
+    if user_phone:
+        user = await calendar_repo.get_user_by_phone(user_phone)
+        if user:
+            user_id_for_sync = user["id"]
+
+    update_data = EventUpdate(
+        title=request.title,
+        event_date=request.event_date,
+        start_time=request.start_time,
+        duration_minutes=request.duration_minutes,
+        location=request.location,
+    )
+
+    updated = await update_event(
+        tenant_id=tenant_id,
+        event_id=target["id"],
+        data=update_data,
+        user_id_for_sync=user_id_for_sync,
+    )
+
+    return AgentSearchOperationResponse(
+        success=True,
+        event=updated,
+        message=f"Evento \"{updated.title}\" modificado.",
+    )
+
+
+async def agent_search_and_delete_event(
+    tenant_id: UUID,
+    request: AgentDeleteEventRequest,
+    user_phone: str | None = None,
+) -> AgentSearchOperationResponse:
+    """Search for an event by query and delete it."""
+    if not request.search_query and not request.event_id:
+        return AgentSearchOperationResponse(
+            success=False,
+            message="Se necesita search_query o event_id para buscar el evento.",
+        )
+
+    if request.event_id:
+        candidates_records = [
+            await calendar_repo.get_event_by_id(tenant_id, request.event_id)
+        ]
+        candidates_records = [r for r in candidates_records if r]
+    else:
+        candidates_records = await calendar_repo.search_events(
+            tenant_id, request.search_query, limit=5
+        )
+
+    if request.event_date and candidates_records:
+        filtered = []
+        for r in candidates_records:
+            if r["start_datetime"].date() == request.event_date:
+                filtered.append(r)
+        if filtered:
+            candidates_records = filtered
+
+    if not candidates_records:
+        return AgentSearchOperationResponse(
+            success=False,
+            message="No encontré ningún evento que coincida con tu búsqueda.",
+        )
+
+    if len(candidates_records) > 1:
+        candidates = [_record_to_event_response(r) for r in candidates_records]
+        return AgentSearchOperationResponse(
+            success=False,
+            candidates=candidates,
+            message="Encontré varios eventos. ¿Cuál querés cancelar?",
+        )
+
+    target = candidates_records[0]
+    event_response = _record_to_event_response(target)
+
+    user_id_for_sync = None
+    if user_phone:
+        user = await calendar_repo.get_user_by_phone(user_phone)
+        if user:
+            user_id_for_sync = user["id"]
+
+    await delete_event(
+        tenant_id=tenant_id,
+        event_id=target["id"],
+        user_id_for_sync=user_id_for_sync,
+    )
+
+    return AgentSearchOperationResponse(
+        success=True,
+        event=event_response,
+        message=f"Evento \"{event_response.title}\" cancelado.",
     )
 
 

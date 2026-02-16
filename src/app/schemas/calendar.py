@@ -252,6 +252,20 @@ class AgentDetectEventResponse(BaseModel):
 
 
 # =============================================================================
+# Agent Search-based Operation Responses
+# =============================================================================
+
+
+class AgentSearchOperationResponse(BaseModel):
+    """Response for search-based update/delete operations."""
+
+    success: bool
+    event: Optional["EventResponse"] = None
+    candidates: list["EventResponse"] = []
+    message: str
+
+
+# =============================================================================
 # Duplicate Detection
 # =============================================================================
 
@@ -275,3 +289,4 @@ class EventWithDuplicateCheck(BaseModel):
 
 # Rebuild models for forward references
 EventListResponse.model_rebuild()
+AgentSearchOperationResponse.model_rebuild()
