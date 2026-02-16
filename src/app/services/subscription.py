@@ -419,10 +419,30 @@ class SubscriptionService:
         )
 
     async def _process_order_created(self, data: dict, meta: dict) -> None:
-        """Process order_created event (first payment)."""
+        """Process order_created event (first payment).
+
+        Handles two scenarios:
+        1. Standard web checkout: subscription_id + tenant_id in custom_data
+        2. WhatsApp onboarding: pending_registration_id in custom_data
+           (creates tenant from pending registration data)
+        """
         attrs = data.get("attributes", {})
         custom_data = meta.get("custom_data", {})
+        order_status = attrs.get("status", "")
 
+        if order_status != "paid":
+            logger.info(f"Order not paid (status={order_status}), skipping")
+            return
+
+        # Check if this is a WhatsApp onboarding payment
+        pending_reg_id = custom_data.get("pending_registration_id")
+        source = custom_data.get("source", "")
+
+        if pending_reg_id and source == "whatsapp":
+            await self._process_whatsapp_order(data, attrs, custom_data, pending_reg_id)
+            return
+
+        # Standard web checkout flow
         subscription_id_str = custom_data.get("subscription_id")
         tenant_id_str = custom_data.get("tenant_id")
         plan_type = custom_data.get("plan_type", "starter")
@@ -434,24 +454,126 @@ class SubscriptionService:
         subscription_id = UUID(subscription_id_str)
         tenant_id = UUID(tenant_id_str)
 
-        # Activate subscription on first successful order
-        status = attrs.get("status", "")
-        if status == "paid":
-            await subscription_repo.update_subscription_status(
-                subscription_id=subscription_id,
+        await subscription_repo.update_subscription_status(
+            subscription_id=subscription_id,
+            status="authorized",
+        )
+        await subscription_repo.update_tenant_plan(
+            tenant_id=tenant_id,
+            plan=plan_type,
+            subscription_id=subscription_id,
+        )
+
+        # Record the payment
+        amount = Decimal(str(attrs.get("total", 0))) / 100
+        await subscription_repo.create_payment(
+            tenant_id=tenant_id,
+            subscription_id=subscription_id,
+            ls_invoice_id=str(data.get("id", "")),
+            amount=amount,
+            currency="USD",
+            status="approved",
+            paid_at=datetime.now(timezone.utc),
+        )
+
+        logger.info(
+            f"Order created & subscription {subscription_id} activated for tenant {tenant_id}"
+        )
+
+    async def _process_whatsapp_order(
+        self,
+        data: dict,
+        attrs: dict,
+        custom_data: dict,
+        pending_reg_id: str,
+    ) -> None:
+        """Process a paid order that originated from WhatsApp onboarding.
+
+        Creates the tenant, user, subscription, and payment from the
+        pending_registrations data.
+        """
+        from ..config.database import get_pool
+        from ..repositories.pending_registration import get_pending_registration_repository
+        from ..repositories.onboarding import get_onboarding_repository
+
+        pending_repo = get_pending_registration_repository()
+        onboarding_repo = get_onboarding_repository()
+
+        # Look up pending registration
+        pending = await pending_repo.get_by_checkout_id(None)
+        # Try by ID first
+        pool = await get_pool()
+        pending_row = await pool.fetchrow(
+            "SELECT * FROM pending_registrations WHERE id = $1 AND status = 'pending'",
+            UUID(pending_reg_id),
+        )
+
+        if not pending_row:
+            logger.error(f"Pending registration {pending_reg_id} not found or already completed")
+            return
+
+        pending = dict(pending_row)
+        phone = pending["phone"]
+        display_name = pending["display_name"]
+        home_name = pending["home_name"]
+        plan_type = pending["plan_type"]
+
+        logger.info(
+            f"Processing WhatsApp order for pending registration {pending_reg_id}, "
+            f"phone={phone}, plan={plan_type}"
+        )
+
+        try:
+            # Step 1: Create tenant
+            tenant_query = """
+                INSERT INTO tenants (
+                    name, home_name, plan, 
+                    onboarding_completed, timezone, language, currency, settings
+                )
+                VALUES ($1, $2, $3, true, 'America/Argentina/Buenos_Aires', 'es-AR', 'ARS', '{}'::jsonb)
+                RETURNING id
+            """
+            tenant_id = await pool.fetchval(tenant_query, home_name, home_name, plan_type)
+
+            # Step 2: Create user
+            user_query = """
+                INSERT INTO users (
+                    tenant_id, phone, display_name, role,
+                    phone_verified, is_active, auth_provider, created_at
+                )
+                VALUES ($1, $2, $3, 'owner', false, true, 'whatsapp', NOW())
+                RETURNING id
+            """
+            user_id = await pool.fetchval(user_query, tenant_id, phone, display_name)
+
+            # Step 3: Set owner on tenant
+            await pool.execute(
+                "UPDATE tenants SET owner_user_id = $1 WHERE id = $2",
+                user_id, tenant_id,
+            )
+
+            # Step 4: Create default budget categories
+            await onboarding_repo.create_default_budget_categories(tenant_id)
+
+            # Step 5: Create subscription record
+            subscription = await subscription_repo.create_subscription(
+                tenant_id=tenant_id,
+                plan_type=plan_type,
                 status="authorized",
             )
+
+            # Step 6: Link subscription to tenant
             await subscription_repo.update_tenant_plan(
                 tenant_id=tenant_id,
                 plan=plan_type,
-                subscription_id=subscription_id,
+                subscription_id=subscription["id"],
             )
 
-            # Record the payment
+            # Step 7: Record payment
             amount = Decimal(str(attrs.get("total", 0))) / 100
             await subscription_repo.create_payment(
                 tenant_id=tenant_id,
-                subscription_id=subscription_id,
+                subscription_id=subscription["id"],
                 ls_invoice_id=str(data.get("id", "")),
                 amount=amount,
                 currency="USD",
@@ -459,8 +581,17 @@ class SubscriptionService:
                 paid_at=datetime.now(timezone.utc),
             )
 
+            # Step 8: Mark pending registration as completed
+            await pending_repo.mark_completed(UUID(pending_reg_id))
+
             logger.info(
-                f"Order created & subscription {subscription_id} activated for tenant {tenant_id}"
+                f"WhatsApp onboarding completed via payment: "
+                f"tenant={tenant_id}, user={user_id}, plan={plan_type}"
+            )
+
+        except Exception as e:
+            logger.exception(
+                f"Failed to process WhatsApp order for pending {pending_reg_id}: {e}"
             )
 
     async def sync_subscription_status(

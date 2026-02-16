@@ -122,6 +122,51 @@ async def get_current_user_optional(
         return None
 
 
+async def require_service_token(
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+) -> CurrentUser:
+    """Require a service token (role=system).
+
+    Used for endpoints called by internal services (e.g. the bot)
+    that don't have a user-scoped JWT.
+    """
+    settings = get_settings()
+
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Service token required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(
+            credentials.credentials,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+        )
+        role = payload.get("role")
+        if role != "system":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Service token with role=system required",
+            )
+
+        user_id: str | None = payload.get("sub")
+        tenant_id: str | None = payload.get("tenant_id")
+        if user_id is None or tenant_id is None:
+            raise credentials_exception
+
+        return CurrentUser(
+            id=_parse_user_id(user_id),
+            tenant_id=UUID(tenant_id),
+            email=payload.get("email"),
+            role="system",
+            onboarding_completed=True,
+        )
+    except JWTError:
+        raise credentials_exception
+
+
 async def validate_tenant_access(
     tenant_id: Annotated[UUID, Path(description="Tenant ID")],
     current_user: Annotated[CurrentUser, Depends(get_current_user)],

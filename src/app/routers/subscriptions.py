@@ -1,14 +1,16 @@
 """Subscription management endpoints."""
 
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from pydantic import BaseModel
 
 from ..config.lemonsqueezy import get_ls_client
-from ..middleware.auth import CurrentUser, get_current_user
+from ..middleware.auth import CurrentUser, get_current_user, require_service_token
 from ..repositories import subscription_repo
+from ..schemas.onboarding import SubscriptionUsageResponse
 from ..schemas.subscription import (
     LemonSqueezyWebhookResponse,
     PaymentListResponse,
@@ -181,6 +183,146 @@ async def sync_subscription(
     service = get_subscription_service()
     updated = await service.sync_subscription_status(subscription["id"])
     return SubscriptionResponse(**updated) if updated else None
+
+
+# =============================================================================
+# Bot-facing endpoints (service token auth)
+# =============================================================================
+
+
+@router.get("/usage/{tenant_id}", response_model=SubscriptionUsageResponse)
+async def get_subscription_usage(
+    tenant_id: UUID,
+    _service_user: Annotated[CurrentUser, Depends(require_service_token)],
+) -> SubscriptionUsageResponse:
+    """
+    Get subscription usage stats for a tenant.
+
+    Called by the bot's SubscriptionAgent. Returns plan info,
+    messages used, members count, and limits.
+
+    Requires service token (role=system).
+    """
+    from ..config.database import get_pool
+    from ..repositories import plan_pricing_repo
+
+    pool = await get_pool()
+
+    # Get tenant info
+    tenant = await pool.fetchrow(
+        "SELECT id, plan, subscription_id FROM tenants WHERE id = $1",
+        tenant_id,
+    )
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found",
+        )
+
+    plan_type = tenant["plan"] or "starter"
+
+    # Get plan limits
+    plan = await plan_pricing_repo.get_plan_by_type(plan_type)
+    messages_limit = plan.get("max_messages_month") if plan else None
+    members_limit = plan.get("max_members", 2) if plan else 2
+    history_days = plan.get("history_days", 7) if plan else 7
+    enabled_services = plan.get("enabled_services", ["reminder", "shopping"]) if plan else ["reminder", "shopping"]
+
+    # Count messages this month
+    messages_used = await pool.fetchval(
+        """
+        SELECT COUNT(*) FROM agent_interactions
+        WHERE tenant_id = $1
+          AND created_at >= date_trunc('month', NOW())
+        """,
+        tenant_id,
+    ) or 0
+
+    # Count active members
+    members_count = await pool.fetchval(
+        "SELECT COUNT(*) FROM users WHERE tenant_id = $1 AND is_active = true",
+        tenant_id,
+    ) or 0
+
+    # Get subscription status
+    subscription = await subscription_repo.get_subscription_by_tenant(tenant_id)
+    sub_status = subscription["status"] if subscription else None
+
+    return SubscriptionUsageResponse(
+        tenant_id=tenant_id,
+        plan=plan_type,
+        messages_used=messages_used,
+        messages_limit=messages_limit,
+        members_count=members_count,
+        members_limit=members_limit,
+        history_days=history_days,
+        enabled_services=enabled_services,
+        subscription_status=sub_status,
+        can_upgrade=plan_type in ("starter", "family"),
+        can_downgrade=plan_type in ("family", "premium"),
+    )
+
+
+class BotUpgradeRequest(BaseModel):
+    """Request from bot to generate upgrade checkout."""
+
+    tenant_id: str
+    plan_type: Literal["family", "premium"]
+
+
+class BotCancelRequest(BaseModel):
+    """Request from bot to cancel subscription."""
+
+    tenant_id: str
+    reason: str = "Sin motivo"
+
+
+@router.post("/upgrade", response_model=SubscriptionCreateResponse)
+async def create_upgrade_checkout(
+    request: BotUpgradeRequest,
+    _service_user: Annotated[CurrentUser, Depends(require_service_token)],
+) -> SubscriptionCreateResponse:
+    """
+    Generate a checkout URL for plan upgrade (bot-facing).
+
+    Requires service token (role=system).
+    """
+    service = get_subscription_service()
+
+    try:
+        # Use a placeholder email; LS will collect the real one
+        result = await service.create_subscription(
+            tenant_id=UUID(request.tenant_id),
+            plan_type=request.plan_type,
+            payer_email="upgrade@whatsapp.placeholder",
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+
+
+@router.post("/cancel-by-tenant", response_model=SubscriptionCancelResponse)
+async def cancel_subscription_by_tenant(
+    request: BotCancelRequest,
+    _service_user: Annotated[CurrentUser, Depends(require_service_token)],
+) -> SubscriptionCancelResponse:
+    """
+    Cancel a subscription by tenant ID (bot-facing).
+
+    Requires service token (role=system).
+    """
+    service = get_subscription_service()
+    success, message = await service.cancel_subscription(
+        tenant_id=UUID(request.tenant_id),
+        reason=request.reason,
+    )
+
+    return SubscriptionCancelResponse(
+        success=success,
+        message=message,
+    )
 
 
 # =============================================================================
