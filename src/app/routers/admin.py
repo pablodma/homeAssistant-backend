@@ -1,4 +1,8 @@
-"""Admin router for agent management."""
+"""Admin router for platform management.
+
+All admin endpoints are global (no tenant scoping).
+The admin panel is a platform management tool, not tied to any specific tenant.
+"""
 
 import traceback
 from datetime import datetime
@@ -35,7 +39,7 @@ from ..services.admin import AdminService
 from ..services.github import GitHubService, GitHubServiceError
 from ..services.qa_reviewer import QAReviewService
 
-router = APIRouter(prefix="/tenants/{tenant_id}/admin", tags=["Admin"])
+router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
 def get_admin_service() -> AdminService:
@@ -50,7 +54,6 @@ def get_admin_service() -> AdminService:
 
 @router.get("/agents", response_model=list[AgentInfo])
 async def list_agents(
-    tenant_id: UUID,
     service: AdminService = Depends(get_admin_service),
     _: CurrentUser = Depends(get_current_user),
 ) -> list[AgentInfo]:
@@ -59,7 +62,7 @@ async def list_agents(
     Returns information about each agent including whether it has a custom
     prompt configured and when it was last updated.
     """
-    return await service.get_agents(str(tenant_id))
+    return await service.get_agents()
 
 
 # =====================================================
@@ -69,7 +72,6 @@ async def list_agents(
 
 @router.get("/agents/{agent_name}/prompt", response_model=AgentPromptWithDefault)
 async def get_agent_prompt(
-    tenant_id: UUID,
     agent_name: str,
     _: CurrentUser = Depends(get_current_user),
 ) -> AgentPromptWithDefault:
@@ -107,7 +109,6 @@ async def get_agent_prompt(
 
 @router.put("/agents/{agent_name}/prompt", response_model=PromptUpdateResponse)
 async def update_agent_prompt(
-    tenant_id: UUID,
     agent_name: str,
     body: AgentPromptUpdate,
     user: CurrentUser = Depends(get_current_user),
@@ -156,7 +157,6 @@ async def update_agent_prompt(
 
 @router.get("/agents/{agent_name}/prompt/history", response_model=list[AgentPromptHistory])
 async def get_prompt_history(
-    tenant_id: UUID,
     agent_name: str,
     limit: int = Query(10, ge=1, le=50),
     _: CurrentUser = Depends(get_current_user),
@@ -176,7 +176,6 @@ async def get_prompt_history(
 
 @router.get("/interactions", response_model=InteractionListResponse)
 async def list_interactions(
-    tenant_id: UUID,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     user_phone: Optional[str] = None,
@@ -193,7 +192,6 @@ async def list_interactions(
     Returns paginated results with total count.
     """
     return await service.get_interactions(
-        tenant_id=str(tenant_id),
         page=page,
         page_size=page_size,
         user_phone=user_phone,
@@ -206,7 +204,6 @@ async def list_interactions(
 
 @router.get("/interactions/{interaction_id}", response_model=InteractionResponse)
 async def get_interaction(
-    tenant_id: UUID,
     interaction_id: UUID,
     service: AdminService = Depends(get_admin_service),
     _: CurrentUser = Depends(get_current_user),
@@ -216,7 +213,7 @@ async def get_interaction(
     Returns full details including message content, tokens used,
     response time, and metadata.
     """
-    interaction = await service.get_interaction(str(tenant_id), str(interaction_id))
+    interaction = await service.get_interaction(str(interaction_id))
     if not interaction:
         raise HTTPException(status_code=404, detail="Interaction not found")
     return interaction
@@ -229,7 +226,6 @@ async def get_interaction(
 
 @router.get("/stats", response_model=StatsResponse)
 async def get_stats(
-    tenant_id: UUID,
     days: int = Query(30, ge=1, le=365),
     service: AdminService = Depends(get_admin_service),
     _: CurrentUser = Depends(get_current_user),
@@ -243,7 +239,7 @@ async def get_stats(
     - Breakdown by agent
     - Daily activity
     """
-    return await service.get_stats(str(tenant_id), days)
+    return await service.get_stats(days)
 
 
 # =====================================================
@@ -253,7 +249,6 @@ async def get_stats(
 
 @router.get("/quality-issues", response_model=QualityIssueListResponse)
 async def list_quality_issues(
-    tenant_id: UUID,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     issue_type: Optional[str] = Query(None, pattern="^(hard_error|soft_error)$"),
@@ -277,7 +272,6 @@ async def list_quality_issues(
     - date range
     """
     return await service.get_quality_issues(
-        tenant_id=str(tenant_id),
         page=page,
         page_size=page_size,
         issue_type=issue_type,
@@ -292,7 +286,6 @@ async def list_quality_issues(
 
 @router.get("/quality-issues/counts", response_model=QualityIssueCounts)
 async def get_quality_issue_counts(
-    tenant_id: UUID,
     days: int = Query(30, ge=1, le=365),
     service: AdminService = Depends(get_admin_service),
     _: CurrentUser = Depends(get_current_user),
@@ -301,12 +294,11 @@ async def get_quality_issue_counts(
 
     Returns aggregated counts by type, category, and severity.
     """
-    return await service.get_quality_issue_counts(str(tenant_id), days)
+    return await service.get_quality_issue_counts(days)
 
 
 @router.get("/quality-issues/{issue_id}", response_model=QualityIssueResponse)
 async def get_quality_issue(
-    tenant_id: UUID,
     issue_id: UUID,
     service: AdminService = Depends(get_admin_service),
     _: CurrentUser = Depends(get_current_user),
@@ -316,7 +308,7 @@ async def get_quality_issue(
     Returns full details including error message, stack trace (for hard errors),
     and QA analysis (for soft errors).
     """
-    issue = await service.get_quality_issue(str(tenant_id), str(issue_id))
+    issue = await service.get_quality_issue(str(issue_id))
     if not issue:
         raise HTTPException(status_code=404, detail="Quality issue not found")
     return issue
@@ -324,7 +316,6 @@ async def get_quality_issue(
 
 @router.patch("/quality-issues/{issue_id}/resolve", response_model=QualityIssueResponse)
 async def resolve_quality_issue(
-    tenant_id: UUID,
     issue_id: UUID,
     body: QualityIssueResolve,
     service: AdminService = Depends(get_admin_service),
@@ -335,7 +326,6 @@ async def resolve_quality_issue(
     Optionally include resolution notes explaining how the issue was fixed.
     """
     issue = await service.resolve_quality_issue(
-        tenant_id=str(tenant_id),
         issue_id=str(issue_id),
         resolved_by=body.resolved_by or user.email,
         resolution_notes=body.resolution_notes,
@@ -352,7 +342,6 @@ async def resolve_quality_issue(
 
 @router.get("/qa-review/history", response_model=list[QAReviewHistoryItem])
 async def get_qa_review_history(
-    tenant_id: UUID,
     limit: int = Query(20, ge=1, le=100),
     user: CurrentUser = Depends(get_current_user),
 ) -> list[QAReviewHistoryItem]:
@@ -364,7 +353,6 @@ async def get_qa_review_history(
 
     try:
         history = await service.get_review_history(
-            tenant_id=str(tenant_id),
             limit=limit,
         )
         return [QAReviewHistoryItem(**item) for item in history]
@@ -379,7 +367,6 @@ async def get_qa_review_history(
 
 @router.post("/qa-review/rollback/{revision_id}", response_model=RollbackResponse)
 async def rollback_prompt_revision(
-    tenant_id: UUID,
     revision_id: UUID,
     user: CurrentUser = Depends(get_current_user),
 ) -> RollbackResponse:
@@ -392,7 +379,6 @@ async def rollback_prompt_revision(
 
     try:
         result = await service.rollback_revision(
-            tenant_id=str(tenant_id),
             revision_id=str(revision_id),
             rolled_back_by=user.email or "admin",
         )

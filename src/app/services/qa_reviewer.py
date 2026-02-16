@@ -30,13 +30,11 @@ class QAReviewService:
 
     async def get_review_history(
         self,
-        tenant_id: str,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
         """Get history of QA review cycles.
 
         Args:
-            tenant_id: The tenant ID.
             limit: Maximum number of cycles to return.
 
         Returns:
@@ -66,12 +64,10 @@ class QAReviewService:
                 ) as revisions
             FROM qa_review_cycles c
             LEFT JOIN prompt_revisions r ON r.review_cycle_id = c.id
-            WHERE c.tenant_id = $1
             GROUP BY c.id
             ORDER BY c.created_at DESC
-            LIMIT $2
+            LIMIT $1
             """,
-            tenant_id,
             limit,
         )
 
@@ -79,14 +75,12 @@ class QAReviewService:
 
     async def rollback_revision(
         self,
-        tenant_id: str,
         revision_id: str,
         rolled_back_by: str,
     ) -> dict[str, Any]:
         """Rollback a prompt revision by restoring the original prompt.
 
         Args:
-            tenant_id: The tenant ID.
             revision_id: The revision to rollback.
             rolled_back_by: Email of the admin performing the rollback.
 
@@ -100,10 +94,9 @@ class QAReviewService:
             """
             SELECT id, agent_name, original_prompt, is_rolled_back
             FROM prompt_revisions
-            WHERE id = $1 AND tenant_id = $2
+            WHERE id = $1
             """,
             revision_id,
-            tenant_id,
         )
 
         if not revision:

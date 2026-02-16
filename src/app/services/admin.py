@@ -32,7 +32,7 @@ class AdminService:
     # AGENTS
     # =====================================================
 
-    async def get_agents(self, tenant_id: str) -> list[AgentInfo]:
+    async def get_agents(self) -> list[AgentInfo]:
         """Get list of all agents with their status.
 
         Prompts live in homeai-assis/docs/prompts/ (source of truth).
@@ -57,24 +57,22 @@ class AdminService:
     # =====================================================
 
     async def get_prompt(
-        self, tenant_id: str, agent_name: str
+        self, agent_name: str
     ) -> Optional[AgentPromptResponse]:
         """Get the active prompt for an agent."""
-        data = await self.repo.get_prompt(tenant_id, agent_name)
+        data = await self.repo.get_prompt(agent_name)
         if data:
             return AgentPromptResponse(**data)
         return None
 
     async def update_prompt(
         self,
-        tenant_id: str,
         agent_name: str,
         prompt_content: str,
         created_by: Optional[str] = None,
     ) -> AgentPromptResponse:
         """Update (create new version of) a prompt."""
         data = await self.repo.create_prompt(
-            tenant_id=tenant_id,
             agent_name=agent_name,
             prompt_content=prompt_content,
             created_by=created_by,
@@ -82,10 +80,10 @@ class AdminService:
         return AgentPromptResponse(**data)
 
     async def get_prompt_history(
-        self, tenant_id: str, agent_name: str, limit: int = 10
+        self, agent_name: str, limit: int = 10
     ) -> list[dict[str, Any]]:
         """Get version history for a prompt."""
-        return await self.repo.get_prompt_history(tenant_id, agent_name, limit)
+        return await self.repo.get_prompt_history(agent_name, limit)
 
     # =====================================================
     # INTERACTIONS
@@ -93,7 +91,6 @@ class AdminService:
 
     async def get_interactions(
         self,
-        tenant_id: str,
         page: int = 1,
         page_size: int = 20,
         user_phone: Optional[str] = None,
@@ -104,7 +101,6 @@ class AdminService:
     ) -> InteractionListResponse:
         """Get paginated list of interactions."""
         items, total = await self.repo.get_interactions(
-            tenant_id=tenant_id,
             page=page,
             page_size=page_size,
             user_phone=user_phone,
@@ -125,10 +121,10 @@ class AdminService:
         )
 
     async def get_interaction(
-        self, tenant_id: str, interaction_id: str
+        self, interaction_id: str
     ) -> Optional[InteractionResponse]:
         """Get a single interaction by ID."""
-        data = await self.repo.get_interaction(tenant_id, interaction_id)
+        data = await self.repo.get_interaction(interaction_id)
         if data:
             return InteractionResponse(**data)
         return None
@@ -138,10 +134,10 @@ class AdminService:
     # =====================================================
 
     async def get_stats(
-        self, tenant_id: str, days: int = 30
+        self, days: int = 30
     ) -> StatsResponse:
         """Get statistics for the admin dashboard."""
-        data = await self.repo.get_stats(tenant_id, days)
+        data = await self.repo.get_stats(days)
         return StatsResponse(**data)
 
     # =====================================================
@@ -150,7 +146,6 @@ class AdminService:
 
     async def get_quality_issues(
         self,
-        tenant_id: str,
         page: int = 1,
         page_size: int = 50,
         issue_type: Optional[str] = None,
@@ -163,7 +158,6 @@ class AdminService:
     ) -> QualityIssueListResponse:
         """Get paginated list of quality issues."""
         items, total = await self.repo.get_quality_issues(
-            tenant_id=tenant_id,
             page=page,
             page_size=page_size,
             issue_type=issue_type,
@@ -186,24 +180,22 @@ class AdminService:
         )
 
     async def get_quality_issue(
-        self, tenant_id: str, issue_id: str
+        self, issue_id: str
     ) -> Optional[QualityIssueResponse]:
         """Get a single quality issue by ID."""
-        data = await self.repo.get_quality_issue(tenant_id, issue_id)
+        data = await self.repo.get_quality_issue(issue_id)
         if data:
             return QualityIssueResponse(**data)
         return None
 
     async def resolve_quality_issue(
         self,
-        tenant_id: str,
         issue_id: str,
         resolved_by: Optional[str] = None,
         resolution_notes: Optional[str] = None,
     ) -> Optional[QualityIssueResponse]:
         """Mark a quality issue as resolved."""
         data = await self.repo.resolve_quality_issue(
-            tenant_id=tenant_id,
             issue_id=issue_id,
             resolved_by=resolved_by,
             resolution_notes=resolution_notes,
@@ -213,8 +205,8 @@ class AdminService:
         return None
 
     async def get_quality_issue_counts(
-        self, tenant_id: str, days: int = 30
+        self, days: int = 30
     ) -> QualityIssueCounts:
         """Get counts of quality issues."""
-        data = await self.repo.get_quality_issue_counts(tenant_id, days)
+        data = await self.repo.get_quality_issue_counts(days)
         return QualityIssueCounts(**data)

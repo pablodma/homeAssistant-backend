@@ -1,8 +1,11 @@
-"""Admin repository for agent management."""
+"""Admin repository for platform management.
+
+All admin queries are global (no tenant scoping).
+The admin panel is a platform management tool that views data across all tenants.
+"""
 
 from datetime import datetime, timedelta
 from typing import Any, Optional
-from uuid import UUID
 
 import structlog
 
@@ -18,21 +21,21 @@ class AdminRepository:
     # AGENT PROMPTS
     # =====================================================
 
-    async def get_prompts(self, tenant_id: str) -> list[dict[str, Any]]:
-        """Get all active prompts for a tenant."""
+    async def get_prompts(self) -> list[dict[str, Any]]:
+        """Get all active prompts."""
         pool = await get_pool()
         query = """
             SELECT id, tenant_id, agent_name, prompt_content, version, is_active, 
                    created_at, updated_at
             FROM agent_prompts
-            WHERE tenant_id = $1 AND is_active = true
+            WHERE is_active = true
             ORDER BY agent_name
         """
-        rows = await pool.fetch(query, tenant_id)
+        rows = await pool.fetch(query)
         return [dict(row) for row in rows]
 
     async def get_prompt(
-        self, tenant_id: str, agent_name: str
+        self, agent_name: str
     ) -> Optional[dict[str, Any]]:
         """Get active prompt for an agent."""
         pool = await get_pool()
@@ -40,14 +43,13 @@ class AdminRepository:
             SELECT id, tenant_id, agent_name, prompt_content, version, is_active,
                    created_at, updated_at
             FROM agent_prompts
-            WHERE tenant_id = $1 AND agent_name = $2 AND is_active = true
+            WHERE agent_name = $1 AND is_active = true
         """
-        row = await pool.fetchrow(query, tenant_id, agent_name)
+        row = await pool.fetchrow(query, agent_name)
         return dict(row) if row else None
 
     async def create_prompt(
         self,
-        tenant_id: str,
         agent_name: str,
         prompt_content: str,
         created_by: Optional[str] = None,
@@ -62,9 +64,8 @@ class AdminRepository:
                     """
                     UPDATE agent_prompts 
                     SET is_active = false, updated_at = NOW()
-                    WHERE tenant_id = $1 AND agent_name = $2 AND is_active = true
+                    WHERE agent_name = $1 AND is_active = true
                     """,
-                    tenant_id,
                     agent_name,
                 )
 
@@ -73,9 +74,8 @@ class AdminRepository:
                     """
                     SELECT COALESCE(MAX(version), 0) + 1 as next_version
                     FROM agent_prompts
-                    WHERE tenant_id = $1 AND agent_name = $2
+                    WHERE agent_name = $1
                     """,
-                    tenant_id,
                     agent_name,
                 )
                 next_version = version_row["next_version"]
@@ -84,12 +84,11 @@ class AdminRepository:
                 row = await conn.fetchrow(
                     """
                     INSERT INTO agent_prompts (
-                        tenant_id, agent_name, prompt_content, version, is_active, created_by
-                    ) VALUES ($1, $2, $3, $4, true, $5)
+                        agent_name, prompt_content, version, is_active, created_by
+                    ) VALUES ($1, $2, $3, true, $4)
                     RETURNING id, tenant_id, agent_name, prompt_content, version, is_active,
                               created_at, updated_at
                     """,
-                    tenant_id,
                     agent_name,
                     prompt_content,
                     next_version,
@@ -99,7 +98,7 @@ class AdminRepository:
                 return dict(row)
 
     async def get_prompt_history(
-        self, tenant_id: str, agent_name: str, limit: int = 10
+        self, agent_name: str, limit: int = 10
     ) -> list[dict[str, Any]]:
         """Get version history for a prompt."""
         pool = await get_pool()
@@ -107,11 +106,11 @@ class AdminRepository:
             SELECT id, version, is_active, created_at,
                    LEFT(prompt_content, 200) as prompt_preview
             FROM agent_prompts
-            WHERE tenant_id = $1 AND agent_name = $2
+            WHERE agent_name = $1
             ORDER BY version DESC
-            LIMIT $3
+            LIMIT $2
         """
-        rows = await pool.fetch(query, tenant_id, agent_name, limit)
+        rows = await pool.fetch(query, agent_name, limit)
         return [dict(row) for row in rows]
 
     # =====================================================
@@ -120,7 +119,6 @@ class AdminRepository:
 
     async def get_interactions(
         self,
-        tenant_id: str,
         page: int = 1,
         page_size: int = 20,
         user_phone: Optional[str] = None,
@@ -132,10 +130,9 @@ class AdminRepository:
         """Get paginated interactions with filters."""
         pool = await get_pool()
 
-        # Build query
-        conditions = ["tenant_id = $1"]
-        params: list[Any] = [tenant_id]
-        param_idx = 2
+        conditions: list[str] = []
+        params: list[Any] = []
+        param_idx = 1
 
         if user_phone:
             conditions.append(f"user_phone = ${param_idx}")
@@ -162,7 +159,7 @@ class AdminRepository:
             params.append(f"%{search}%")
             param_idx += 1
 
-        where_clause = " AND ".join(conditions)
+        where_clause = " AND ".join(conditions) if conditions else "TRUE"
 
         # Count total
         count_query = f"SELECT COUNT(*) FROM agent_interactions WHERE {where_clause}"
@@ -186,7 +183,7 @@ class AdminRepository:
         return [dict(row) for row in rows], total
 
     async def get_interaction(
-        self, tenant_id: str, interaction_id: str
+        self, interaction_id: str
     ) -> Optional[dict[str, Any]]:
         """Get a single interaction by ID."""
         pool = await get_pool()
@@ -195,9 +192,9 @@ class AdminRepository:
                    agent_used, sub_agent_used, tokens_in, tokens_out,
                    response_time_ms, created_at, metadata
             FROM agent_interactions
-            WHERE tenant_id = $1 AND id = $2
+            WHERE id = $1
         """
-        row = await pool.fetchrow(query, tenant_id, interaction_id)
+        row = await pool.fetchrow(query, interaction_id)
         return dict(row) if row else None
 
     # =====================================================
@@ -206,7 +203,6 @@ class AdminRepository:
 
     async def get_stats(
         self,
-        tenant_id: str,
         days: int = 30,
     ) -> dict[str, Any]:
         """Get statistics for the admin dashboard."""
@@ -221,9 +217,9 @@ class AdminRepository:
                 COALESCE(SUM(tokens_in + tokens_out), 0) as total_tokens,
                 AVG(response_time_ms) as avg_response_time_ms
             FROM agent_interactions
-            WHERE tenant_id = $1 AND created_at >= $2
+            WHERE created_at >= $1
         """
-        overall = await pool.fetchrow(overall_query, tenant_id, start_date)
+        overall = await pool.fetchrow(overall_query, start_date)
 
         # By agent
         by_agent_query = """
@@ -233,11 +229,11 @@ class AdminRepository:
                 AVG(response_time_ms) as avg_response_time_ms,
                 COALESCE(SUM(tokens_in + tokens_out), 0) as total_tokens
             FROM agent_interactions
-            WHERE tenant_id = $1 AND created_at >= $2
+            WHERE created_at >= $1
             GROUP BY agent_used
             ORDER BY total_messages DESC
         """
-        by_agent_rows = await pool.fetch(by_agent_query, tenant_id, start_date)
+        by_agent_rows = await pool.fetch(by_agent_query, start_date)
 
         # By day
         by_day_query = """
@@ -247,12 +243,12 @@ class AdminRepository:
                 COUNT(DISTINCT user_phone) as unique_users,
                 COALESCE(SUM(tokens_in + tokens_out), 0) as total_tokens
             FROM agent_interactions
-            WHERE tenant_id = $1 AND created_at >= $2
+            WHERE created_at >= $1
             GROUP BY DATE(created_at)
             ORDER BY date DESC
             LIMIT 30
         """
-        by_day_rows = await pool.fetch(by_day_query, tenant_id, start_date)
+        by_day_rows = await pool.fetch(by_day_query, start_date)
 
         return {
             "total_messages": overall["total_messages"],
@@ -277,7 +273,6 @@ class AdminRepository:
 
     async def get_quality_issues(
         self,
-        tenant_id: str,
         page: int = 1,
         page_size: int = 50,
         issue_type: Optional[str] = None,
@@ -291,10 +286,9 @@ class AdminRepository:
         """Get paginated quality issues with filters."""
         pool = await get_pool()
 
-        # Build query
-        conditions = ["tenant_id = $1"]
-        params: list[Any] = [tenant_id]
-        param_idx = 2
+        conditions: list[str] = []
+        params: list[Any] = []
+        param_idx = 1
 
         if issue_type:
             conditions.append(f"issue_type = ${param_idx}")
@@ -331,7 +325,7 @@ class AdminRepository:
             params.append(end_date)
             param_idx += 1
 
-        where_clause = " AND ".join(conditions)
+        where_clause = " AND ".join(conditions) if conditions else "TRUE"
 
         # Count total
         count_query = f"SELECT COUNT(*) FROM quality_issues WHERE {where_clause}"
@@ -356,7 +350,7 @@ class AdminRepository:
         return [dict(row) for row in rows], total
 
     async def get_quality_issue(
-        self, tenant_id: str, issue_id: str
+        self, issue_id: str
     ) -> Optional[dict[str, Any]]:
         """Get a single quality issue by ID."""
         pool = await get_pool()
@@ -369,14 +363,13 @@ class AdminRepository:
                    is_resolved, resolved_at, resolved_by, resolution_notes,
                    created_at
             FROM quality_issues
-            WHERE tenant_id = $1 AND id = $2
+            WHERE id = $1
         """
-        row = await pool.fetchrow(query, tenant_id, issue_id)
+        row = await pool.fetchrow(query, issue_id)
         return dict(row) if row else None
 
     async def resolve_quality_issue(
         self,
-        tenant_id: str,
         issue_id: str,
         resolved_by: Optional[str] = None,
         resolution_notes: Optional[str] = None,
@@ -387,9 +380,9 @@ class AdminRepository:
             UPDATE quality_issues
             SET is_resolved = true,
                 resolved_at = NOW(),
-                resolved_by = $3,
-                resolution_notes = $4
-            WHERE tenant_id = $1 AND id = $2
+                resolved_by = $2,
+                resolution_notes = $3
+            WHERE id = $1
             RETURNING id, tenant_id, interaction_id, issue_type, issue_category,
                       user_phone, agent_name, tool_name, message_in, message_out,
                       error_code, error_message, severity,
@@ -398,12 +391,11 @@ class AdminRepository:
                       is_resolved, resolved_at, resolved_by, resolution_notes,
                       created_at
         """
-        row = await pool.fetchrow(query, tenant_id, issue_id, resolved_by, resolution_notes)
+        row = await pool.fetchrow(query, issue_id, resolved_by, resolution_notes)
         return dict(row) if row else None
 
     async def get_quality_issue_counts(
         self,
-        tenant_id: str,
         days: int = 30,
     ) -> dict[str, Any]:
         """Get counts of quality issues for summary."""
@@ -418,27 +410,27 @@ class AdminRepository:
                 COUNT(*) FILTER (WHERE issue_type = 'soft_error') as soft_errors,
                 COUNT(*) FILTER (WHERE is_resolved = false) as unresolved
             FROM quality_issues
-            WHERE tenant_id = $1 AND created_at >= $2
+            WHERE created_at >= $1
         """
-        counts = await pool.fetchrow(counts_query, tenant_id, start_date)
+        counts = await pool.fetchrow(counts_query, start_date)
 
         # By category
         by_category_query = """
             SELECT issue_category, COUNT(*) as count
             FROM quality_issues
-            WHERE tenant_id = $1 AND created_at >= $2
+            WHERE created_at >= $1
             GROUP BY issue_category
         """
-        by_category_rows = await pool.fetch(by_category_query, tenant_id, start_date)
+        by_category_rows = await pool.fetch(by_category_query, start_date)
 
         # By severity
         by_severity_query = """
             SELECT severity, COUNT(*) as count
             FROM quality_issues
-            WHERE tenant_id = $1 AND created_at >= $2
+            WHERE created_at >= $1
             GROUP BY severity
         """
-        by_severity_rows = await pool.fetch(by_severity_query, tenant_id, start_date)
+        by_severity_rows = await pool.fetch(by_severity_query, start_date)
 
         return {
             "total": counts["total"],
