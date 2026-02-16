@@ -21,12 +21,14 @@ from ..schemas.admin import (
     AgentPromptResponse,
     AgentPromptUpdate,
     AgentPromptWithDefault,
+    ApplyFixResponse,
     InteractionListResponse,
     InteractionResponse,
     PromptRevisionItem,
     PromptUpdateResponse,
     QAReviewHistoryItem,
     QualityIssueCounts,
+    QualityIssueInsightUpdate,
     QualityIssueListResponse,
     QualityIssueResolve,
     QualityIssueResponse,
@@ -333,6 +335,56 @@ async def resolve_quality_issue(
     if not issue:
         raise HTTPException(status_code=404, detail="Quality issue not found")
     return issue
+
+
+@router.patch("/quality-issues/{issue_id}/insight", response_model=QualityIssueResponse)
+async def save_quality_issue_insight(
+    issue_id: UUID,
+    body: QualityIssueInsightUpdate,
+    service: AdminService = Depends(get_admin_service),
+    _: CurrentUser = Depends(get_current_user),
+) -> QualityIssueResponse:
+    """Save admin insight for a quality issue.
+
+    The insight is included in the continuous improvement pipeline
+    when generating prompt fixes.
+    """
+    issue = await service.save_insight(
+        issue_id=str(issue_id),
+        admin_insight=body.admin_insight,
+    )
+    if not issue:
+        raise HTTPException(status_code=404, detail="Quality issue not found")
+    return issue
+
+
+@router.post("/quality-issues/{issue_id}/apply-fix", response_model=ApplyFixResponse)
+async def apply_quality_issue_fix(
+    issue_id: UUID,
+    service: AdminService = Depends(get_admin_service),
+    _: CurrentUser = Depends(get_current_user),
+) -> ApplyFixResponse:
+    """Apply a fix for a specific quality issue.
+
+    Proxies to the bot's internal API which generates an improved prompt
+    based on the issue analysis and admin insight, then commits to GitHub.
+    The bot will redeploy automatically (~30 seconds).
+    """
+    try:
+        return await service.apply_fix(issue_id=str(issue_id))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(
+            "Apply fix failed",
+            issue_id=str(issue_id),
+            error=str(e),
+            traceback=traceback.format_exc(),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Failed to apply fix", "message": str(e)},
+        )
 
 
 # =====================================================

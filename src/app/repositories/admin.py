@@ -361,11 +361,33 @@ class AdminRepository:
                    qa_analysis, qa_suggestion, qa_confidence,
                    request_payload, stack_trace, correlation_id,
                    is_resolved, resolved_at, resolved_by, resolution_notes,
-                   created_at
+                   admin_insight, created_at
             FROM quality_issues
             WHERE id = $1
         """
         row = await pool.fetchrow(query, issue_id)
+        return dict(row) if row else None
+
+    async def update_issue_insight(
+        self,
+        issue_id: str,
+        admin_insight: str,
+    ) -> Optional[dict[str, Any]]:
+        """Update the admin insight for a quality issue."""
+        pool = await get_pool()
+        query = """
+            UPDATE quality_issues
+            SET admin_insight = $2
+            WHERE id = $1
+            RETURNING id, tenant_id, interaction_id, issue_type, issue_category,
+                      user_phone, agent_name, tool_name, message_in, message_out,
+                      error_code, error_message, severity,
+                      qa_analysis, qa_suggestion, qa_confidence,
+                      request_payload, stack_trace, correlation_id,
+                      is_resolved, resolved_at, resolved_by, resolution_notes,
+                      admin_insight, created_at
+        """
+        row = await pool.fetchrow(query, issue_id, admin_insight)
         return dict(row) if row else None
 
     async def resolve_quality_issue(
@@ -389,7 +411,7 @@ class AdminRepository:
                       qa_analysis, qa_suggestion, qa_confidence,
                       request_payload, stack_trace, correlation_id,
                       is_resolved, resolved_at, resolved_by, resolution_notes,
-                      created_at
+                      admin_insight, created_at
         """
         row = await pool.fetchrow(query, issue_id, resolved_by, resolution_notes)
         return dict(row) if row else None

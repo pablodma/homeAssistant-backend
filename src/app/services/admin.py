@@ -3,13 +3,16 @@
 from datetime import datetime
 from typing import Any, Optional
 
+import httpx
 import structlog
 
+from ..config.settings import get_settings
 from ..repositories.admin import AdminRepository
 from ..schemas.admin import (
     AGENT_DEFINITIONS,
     AgentInfo,
     AgentPromptResponse,
+    ApplyFixResponse,
     InteractionListResponse,
     InteractionResponse,
     PROMPT_FILES,
@@ -210,3 +213,54 @@ class AdminService:
         """Get counts of quality issues."""
         data = await self.repo.get_quality_issue_counts(days)
         return QualityIssueCounts(**data)
+
+    async def save_insight(
+        self,
+        issue_id: str,
+        admin_insight: str,
+    ) -> Optional[QualityIssueResponse]:
+        """Save admin insight for a quality issue."""
+        data = await self.repo.update_issue_insight(
+            issue_id=issue_id,
+            admin_insight=admin_insight,
+        )
+        if data:
+            return QualityIssueResponse(**data)
+        return None
+
+    async def apply_fix(
+        self,
+        issue_id: str,
+    ) -> ApplyFixResponse:
+        """Apply a fix for a quality issue by proxying to the bot's internal API.
+
+        The bot generates an improved prompt based on the issue analysis
+        and admin insight, then commits it to GitHub.
+        """
+        settings = get_settings()
+        if not settings.bot_internal_url:
+            raise ValueError(
+                "BOT_INTERNAL_URL not configured. "
+                "Set the environment variable to enable fix application."
+            )
+
+        bot_url = settings.bot_internal_url.rstrip("/")
+        endpoint = f"{bot_url}/internal/qa-fix-issue"
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                endpoint,
+                json={"issue_id": issue_id},
+            )
+
+        if response.status_code != 200:
+            error_detail = response.text
+            logger.error(
+                "Bot fix request failed",
+                status=response.status_code,
+                detail=error_detail,
+            )
+            raise ValueError(f"Bot returned error {response.status_code}: {error_detail}")
+
+        result = response.json()
+        return ApplyFixResponse(**result)

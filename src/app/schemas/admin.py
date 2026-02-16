@@ -329,6 +329,7 @@ class QualityIssueResponse(QualityIssueBase):
     resolved_at: Optional[datetime] = None
     resolved_by: Optional[str] = None
     resolution_notes: Optional[str] = None
+    admin_insight: Optional[str] = None
     created_at: datetime
 
 
@@ -385,6 +386,25 @@ class QualityIssueCounts(BaseSchema):
     unresolved: int
     by_category: dict[str, int]
     by_severity: dict[str, int]
+
+
+class QualityIssueInsightUpdate(BaseSchema):
+    """Schema for updating admin insight on a quality issue."""
+
+    admin_insight: str = Field(..., description="Admin's analysis/insight for this issue")
+
+
+class ApplyFixResponse(BaseSchema):
+    """Response from applying a fix for a quality issue."""
+
+    revision_id: str
+    agent_name: str
+    improvement_reason: str
+    changes_summary: list[dict[str, Any]] = []
+    confidence: float = 0.0
+    github_commit_sha: str = ""
+    github_commit_url: str = ""
+    message: str = "Fix aplicado exitosamente"
 
 
 # =====================================================

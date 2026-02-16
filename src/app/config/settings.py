@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # GitHub API (for prompt editing)
     github_token: str = ""  # Personal Access Token with repo write access
     github_repo: str = "pablodma/homeAssistant-asistant"  # owner/repo
-    github_branch: str = "master"
+    github_branch: str = "main"
 
     # Frontend URL (para redirects post-pago)
     frontend_url: str = "http://localhost:3000"
@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     ls_api_key: str = ""  # API key de Lemon Squeezy
     ls_store_id: str = "292594"  # Store ID
     ls_webhook_secret: str = ""  # Para validar firma de webhooks
+
+    # Bot internal URL (for proxying fix requests to homeai-assis)
+    bot_internal_url: str = ""
 
     # NOTE: Anthropic/QA Review AI logic moved to homeai-assis.
     # homeai-api only serves history + rollback (DB + GitHub operations).
