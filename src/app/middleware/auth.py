@@ -127,13 +127,10 @@ async def validate_tenant_access(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> None:
     """Validate user has access to the requested tenant."""
-    # System role (service tokens) can access any tenant they're issued for
+    # System role (service tokens) are trusted internal services (e.g. the bot)
+    # that need to operate on behalf of any tenant (multi-tenant bot resolves
+    # tenant dynamically from phone number).
     if current_user.role == "system":
-        if current_user.tenant_id != tenant_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Service token not authorized for this tenant",
-            )
         return
     
     if current_user.tenant_id != tenant_id:
