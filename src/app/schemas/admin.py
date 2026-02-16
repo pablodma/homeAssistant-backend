@@ -334,6 +334,10 @@ class QualityIssueResponse(QualityIssueBase):
     fix_error: Optional[str] = None
     fix_result: Optional[dict[str, Any]] = None
     created_at: datetime
+    related_issues: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Other issues from the same interaction (linked by interaction_id)",
+    )
 
 
 class QualityIssueListItem(BaseSchema):

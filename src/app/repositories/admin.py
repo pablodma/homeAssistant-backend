@@ -368,6 +368,29 @@ class AdminRepository:
         row = await pool.fetchrow(query, issue_id)
         return dict(row) if row else None
 
+    async def get_related_issues(
+        self, issue_id: str, interaction_id: Optional[str] = None
+    ) -> list[dict[str, Any]]:
+        """Get other quality issues from the same interaction.
+
+        Returns simplified issue data for issues sharing the same
+        interaction_id, excluding the current issue.
+        """
+        if not interaction_id:
+            return []
+
+        pool = await get_pool()
+        query = """
+            SELECT id, issue_type, issue_category, severity, agent_name,
+                   LEFT(error_message, 150) as error_preview,
+                   is_resolved, fix_status, created_at
+            FROM quality_issues
+            WHERE interaction_id = $1 AND id != $2
+            ORDER BY created_at
+        """
+        rows = await pool.fetch(query, interaction_id, issue_id)
+        return [dict(row) for row in rows]
+
     async def update_issue_insight(
         self,
         issue_id: str,

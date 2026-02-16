@@ -185,11 +185,17 @@ class AdminService:
     async def get_quality_issue(
         self, issue_id: str
     ) -> Optional[QualityIssueResponse]:
-        """Get a single quality issue by ID."""
+        """Get a single quality issue by ID, including related issues."""
         data = await self.repo.get_quality_issue(issue_id)
-        if data:
-            return QualityIssueResponse(**data)
-        return None
+        if not data:
+            return None
+
+        # Fetch related issues from the same interaction
+        interaction_id = str(data["interaction_id"]) if data.get("interaction_id") else None
+        related = await self.repo.get_related_issues(issue_id, interaction_id)
+        data["related_issues"] = related
+
+        return QualityIssueResponse(**data)
 
     async def resolve_quality_issue(
         self,
