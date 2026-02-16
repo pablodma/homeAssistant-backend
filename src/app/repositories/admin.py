@@ -361,7 +361,7 @@ class AdminRepository:
                    qa_analysis, qa_suggestion, qa_confidence,
                    request_payload, stack_trace, correlation_id,
                    is_resolved, resolved_at, resolved_by, resolution_notes,
-                   admin_insight, created_at
+                   admin_insight, fix_status, fix_error, fix_result, created_at
             FROM quality_issues
             WHERE id = $1
         """
@@ -385,7 +385,7 @@ class AdminRepository:
                       qa_analysis, qa_suggestion, qa_confidence,
                       request_payload, stack_trace, correlation_id,
                       is_resolved, resolved_at, resolved_by, resolution_notes,
-                      admin_insight, created_at
+                      admin_insight, fix_status, fix_error, fix_result, created_at
         """
         row = await pool.fetchrow(query, issue_id, admin_insight)
         return dict(row) if row else None
@@ -411,7 +411,7 @@ class AdminRepository:
                       qa_analysis, qa_suggestion, qa_confidence,
                       request_payload, stack_trace, correlation_id,
                       is_resolved, resolved_at, resolved_by, resolution_notes,
-                      admin_insight, created_at
+                      admin_insight, fix_status, fix_error, fix_result, created_at
         """
         row = await pool.fetchrow(query, issue_id, resolved_by, resolution_notes)
         return dict(row) if row else None

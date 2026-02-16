@@ -330,6 +330,9 @@ class QualityIssueResponse(QualityIssueBase):
     resolved_by: Optional[str] = None
     resolution_notes: Optional[str] = None
     admin_insight: Optional[str] = None
+    fix_status: Optional[str] = None
+    fix_error: Optional[str] = None
+    fix_result: Optional[dict[str, Any]] = None
     created_at: datetime
 
 
@@ -395,16 +398,11 @@ class QualityIssueInsightUpdate(BaseSchema):
 
 
 class ApplyFixResponse(BaseSchema):
-    """Response from applying a fix for a quality issue."""
+    """Response from requesting a fix (async - returns immediately)."""
 
-    revision_id: str
-    agent_name: str
-    improvement_reason: str
-    changes_summary: list[dict[str, Any]] = []
-    confidence: float = 0.0
-    github_commit_sha: str = ""
-    github_commit_url: str = ""
-    message: str = "Fix aplicado exitosamente"
+    status: str = "accepted"
+    issue_id: str
+    message: str = "Fix iniciado. El estado se actualiza automáticamente."
 
 
 # =====================================================

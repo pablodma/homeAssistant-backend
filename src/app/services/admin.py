@@ -232,10 +232,10 @@ class AdminService:
         self,
         issue_id: str,
     ) -> ApplyFixResponse:
-        """Apply a fix for a quality issue by proxying to the bot's internal API.
+        """Start a fix for a quality issue by proxying to the bot's internal API.
 
-        The bot generates an improved prompt based on the issue analysis
-        and admin insight, then commits it to GitHub.
+        The bot runs the fix asynchronously in a background task.
+        Returns 202 immediately. The admin polls the issue detail for status.
         """
         settings = get_settings()
         if not settings.bot_internal_url:
@@ -247,13 +247,13 @@ class AdminService:
         bot_url = settings.bot_internal_url.rstrip("/")
         endpoint = f"{bot_url}/internal/qa-fix-issue"
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 endpoint,
                 json={"issue_id": issue_id},
             )
 
-        if response.status_code != 200:
+        if response.status_code not in (200, 202):
             error_detail = response.text
             logger.error(
                 "Bot fix request failed",
@@ -262,5 +262,8 @@ class AdminService:
             )
             raise ValueError(f"Bot returned error {response.status_code}: {error_detail}")
 
-        result = response.json()
-        return ApplyFixResponse(**result)
+        return ApplyFixResponse(
+            status="accepted",
+            issue_id=issue_id,
+            message="Fix iniciado. El estado se actualiza automáticamente.",
+        )
