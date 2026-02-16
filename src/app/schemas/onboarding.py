@@ -181,6 +181,30 @@ class WhatsAppPendingResponse(BaseModel):
     message: str = "Registro pendiente de pago"
 
 
+class BotInviteMemberRequest(BaseModel):
+    """Request to invite a member via bot (service token)."""
+
+    phone: str = Field(..., description="Phone number in E.164 format")
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        """Validate phone format."""
+        import re
+        if not re.match(r"^\+\d{10,15}$", v):
+            raise ValueError("Phone must be in E.164 format (e.g., +5491112345678)")
+        return v
+
+
+class BotInviteMemberResponse(BaseModel):
+    """Response after bot invites a member."""
+
+    success: bool
+    member_id: UUID
+    phone: str
+    message: str = "Miembro agregado al hogar"
+
+
 class SubscriptionUsageResponse(BaseModel):
     """Usage stats for a tenant's subscription."""
     

@@ -13,6 +13,8 @@ from ..repositories.onboarding import get_onboarding_repository
 from ..repositories.pending_registration import get_pending_registration_repository
 from ..schemas.onboarding import (
     AddMemberRequest,
+    BotInviteMemberRequest,
+    BotInviteMemberResponse,
     MemberResponse,
     OnboardingRequest,
     OnboardingResponse,
@@ -253,6 +255,90 @@ async def remove_member(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Member not found",
         )
+
+
+# ============================================================================
+# Bot Member Invitation (used by bot via service token)
+# ============================================================================
+
+
+@router.post(
+    "/tenants/{tenant_id}/members/bot",
+    response_model=BotInviteMemberResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def bot_invite_member(
+    tenant_id: UUID,
+    request: BotInviteMemberRequest,
+    _service_user: Annotated[CurrentUser, Depends(require_service_token)],
+) -> BotInviteMemberResponse:
+    """
+    Invite a member to a tenant via bot.
+
+    Called by the SubscriptionAgent to add a WhatsApp number to a household.
+    Validates plan member limits before adding.
+
+    Requires service token (role=system).
+    """
+    logger = logging.getLogger(__name__)
+    repo = get_onboarding_repository()
+    pool = await get_pool()
+
+    # Check if phone is already registered
+    if await repo.check_phone_exists(request.phone):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ese número ya está registrado en otro hogar",
+        )
+
+    # Get current member count
+    members = await repo.get_members_by_tenant(tenant_id)
+    current_count = len(members)
+
+    # Get plan member limit
+    tenant_row = await pool.fetchrow(
+        "SELECT plan FROM tenants WHERE id = $1",
+        tenant_id,
+    )
+    if not tenant_row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hogar no encontrado",
+        )
+
+    plan = tenant_row["plan"]
+    pricing_row = await pool.fetchrow(
+        "SELECT max_members FROM plan_pricing WHERE plan_type = $1",
+        plan,
+    )
+
+    if pricing_row and pricing_row["max_members"] is not None:
+        max_members = pricing_row["max_members"]
+        if current_count >= max_members:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Tu plan {plan} permite hasta {max_members} miembros. "
+                       f"Ya tenés {current_count}. Hacé upgrade para sumar más.",
+            )
+
+    # Create member with temporary display_name
+    normalized_phone = repo._normalize_phone(request.phone)
+    user_id = await repo.create_member(
+        tenant_id=tenant_id,
+        phone=normalized_phone,
+        display_name="Miembro",
+        role="member",
+    )
+
+    logger.info(
+        f"Bot invited member: tenant={tenant_id}, phone={normalized_phone}, user={user_id}"
+    )
+
+    return BotInviteMemberResponse(
+        success=True,
+        member_id=user_id,
+        phone=normalized_phone,
+    )
 
 
 # ============================================================================
