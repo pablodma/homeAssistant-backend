@@ -236,6 +236,13 @@ AGENT_DEFINITIONS = [
         is_active=True,
     ),
     AgentInfo(
+        name="subscription",
+        display_name="Suscripciones",
+        description="Onboarding WhatsApp y gestión de suscripciones (planes, upgrade, cancelación)",
+        has_prompt=False,
+        is_active=True,
+    ),
+    AgentInfo(
         name="qa",
         display_name="QA (Control de Calidad)",
         description="Analiza interacciones para detectar errores de calidad",
@@ -261,6 +268,7 @@ PROMPT_FILES = {
     "reminder": "reminder-agent.md",
     "shopping": "shopping-agent.md",
     "vehicle": "vehicle-agent.md",
+    "subscription": "subscription-agent.md",
     "qa": "qa-agent.md",
     "qa-reviewer": "qa-reviewer-agent.md",
 }
