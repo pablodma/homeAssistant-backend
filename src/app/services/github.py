@@ -29,7 +29,7 @@ PROMPT_FILE_PATHS = {
     "vehicle": "docs/prompts/vehicle-agent.md",
     "subscription": "docs/prompts/subscription-agent.md",
     "qa": "docs/prompts/qa-agent.md",
-    "qa-reviewer": "docs/prompts/qa-reviewer-agent.md",
+    "prompt-improver": "docs/prompts/prompt-improver-agent.md",
 }
 
 

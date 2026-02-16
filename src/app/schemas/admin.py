@@ -250,8 +250,8 @@ AGENT_DEFINITIONS = [
         is_active=True,
     ),
     AgentInfo(
-        name="qa-reviewer",
-        display_name="QA Reviewer (Mejora Continua)",
+        name="prompt-improver",
+        display_name="Prompt Improver (Mejora Continua)",
         description="Analiza issues acumulados y propone mejoras en prompts de agentes",
         has_prompt=False,
         is_active=True,
@@ -270,7 +270,7 @@ PROMPT_FILES = {
     "vehicle": "vehicle-agent.md",
     "subscription": "subscription-agent.md",
     "qa": "qa-agent.md",
-    "qa-reviewer": "qa-reviewer-agent.md",
+    "prompt-improver": "prompt-improver-agent.md",
 }
 
 
