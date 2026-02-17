@@ -95,7 +95,7 @@ class InteractionResponse(BaseSchema):
     """Schema for interaction log response."""
 
     id: UUID
-    tenant_id: UUID
+    tenant_id: Optional[UUID] = None
     user_phone: str
     user_name: Optional[str] = None
     message_in: str
@@ -319,7 +319,7 @@ class QualityIssueResponse(QualityIssueBase):
     """Full quality issue response."""
 
     id: UUID
-    tenant_id: UUID
+    tenant_id: Optional[UUID] = None
     interaction_id: Optional[UUID] = None
     user_phone: Optional[str] = None
     agent_name: Optional[str] = None
