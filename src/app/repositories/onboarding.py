@@ -203,7 +203,8 @@ class OnboardingRepository:
                 t.plan,
                 t.timezone,
                 t.language,
-                t.currency
+                t.currency,
+                t.onboarding_completed
             FROM users u
             JOIN tenants t ON u.tenant_id = t.id
             WHERE u.phone = ANY($1)

@@ -98,6 +98,22 @@ class PhoneLookupResponse(BaseModel):
     tenant_id: UUID | None = None
     user_name: str | None = None
     home_name: str | None = None
+    onboarding_completed: bool | None = None
+
+
+class SetupCompleteRequest(BaseModel):
+    """Request to complete home setup after payment."""
+    
+    home_name: str = Field(..., min_length=2, max_length=100, description="Household name")
+
+
+class SetupCompleteResponse(BaseModel):
+    """Response after completing home setup."""
+    
+    tenant_id: UUID
+    home_name: str
+    onboarding_completed: bool = True
+    message: str = "Hogar configurado exitosamente"
 
 
 class AddMemberRequest(BaseModel):
@@ -154,12 +170,12 @@ class WhatsAppOnboardingResponse(BaseModel):
 
 
 class WhatsAppPendingRequest(BaseModel):
-    """Request to create a pending registration for paid plans."""
+    """Request to create a pending registration for any plan (all go through checkout)."""
     
     phone: str = Field(..., description="Phone number in E.164 format")
     display_name: str = Field(..., min_length=1, max_length=100)
-    home_name: str = Field(..., min_length=2, max_length=100)
-    plan_type: Literal["family", "premium"]
+    home_name: str | None = Field(default=None, description="Optional - collected post-payment")
+    plan_type: Literal["starter", "family", "premium"]
     coupon_code: str | None = None
 
     @field_validator("phone")

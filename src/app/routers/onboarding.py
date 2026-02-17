@@ -20,9 +20,9 @@ from ..schemas.onboarding import (
     OnboardingResponse,
     OnboardingStatusResponse,
     PhoneLookupResponse,
+    SetupCompleteRequest,
+    SetupCompleteResponse,
     SubscriptionUsageResponse,
-    WhatsAppOnboardingRequest,
-    WhatsAppOnboardingResponse,
     WhatsAppPendingRequest,
     WhatsAppPendingResponse,
 )
@@ -144,6 +144,7 @@ async def lookup_phone(
             tenant_id=None,
             user_name=None,
             home_name=None,
+            onboarding_completed=None,
         )
     
     return PhoneLookupResponse(
@@ -151,6 +152,7 @@ async def lookup_phone(
         tenant_id=result["tenant_id"],
         user_name=result.get("user_name"),
         home_name=result.get("home_name"),
+        onboarding_completed=result.get("onboarding_completed", False),
     )
 
 
@@ -346,102 +348,56 @@ async def bot_invite_member(
 # ============================================================================
 
 
-@router.post(
-    "/onboarding/whatsapp",
-    response_model=WhatsAppOnboardingResponse,
-    status_code=status.HTTP_201_CREATED,
+@router.patch(
+    "/tenants/{tenant_id}/setup",
+    response_model=SetupCompleteResponse,
 )
-async def whatsapp_onboarding(
-    request: WhatsAppOnboardingRequest,
+async def complete_tenant_setup(
+    tenant_id: UUID,
+    request: SetupCompleteRequest,
     _service_user: Annotated[CurrentUser, Depends(require_service_token)],
-) -> WhatsAppOnboardingResponse:
+) -> SetupCompleteResponse:
     """
-    Create a tenant from WhatsApp onboarding (Starter plan only).
+    Complete home setup after payment confirmation.
 
-    Called by the bot when a new user registers via WhatsApp.
-    Creates tenant, user, and default budget categories in one step.
+    Called by the bot when a new user configures their home name
+    after successful payment. Sets home_name and marks onboarding_completed=true.
 
     Requires service token (role=system).
     """
-    repo = get_onboarding_repository()
-
-    # Check if phone is already registered
-    if await repo.check_phone_exists(request.phone):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Este número ya está registrado en otro hogar",
-        )
-
     logger = logging.getLogger(__name__)
+    pool = await get_pool()
 
-    try:
-        pool = await get_pool()
-
-        # Step 1: Create tenant
-        tenant_query = """
-            INSERT INTO tenants (
-                name, home_name, plan, 
-                onboarding_completed, timezone, language, currency, settings
-            )
-            VALUES ($1, $2, $3, true, $4, $5, $6, '{}'::jsonb)
-            RETURNING id
-        """
-        tenant_id = await pool.fetchval(
-            tenant_query,
-            request.home_name,
-            request.home_name,
-            request.plan,
-            request.timezone,
-            request.language,
-            request.currency,
-        )
-
-        # Step 2: Create user with owner role
-        user_query = """
-            INSERT INTO users (
-                tenant_id, phone, display_name, role,
-                phone_verified, is_active, auth_provider, created_at
-            )
-            VALUES ($1, $2, $3, 'owner', false, true, 'whatsapp', NOW())
-            RETURNING id
-        """
-        normalized_phone = repo._normalize_phone(request.phone)
-        user_id = await pool.fetchval(
-            user_query,
-            tenant_id,
-            normalized_phone,
-            request.display_name,
-        )
-
-        # Step 3: Set owner on tenant
-        await pool.execute(
-            "UPDATE tenants SET owner_user_id = $1 WHERE id = $2",
-            user_id,
-            tenant_id,
-        )
-
-        # Step 4: Create default budget categories
-        await repo.create_default_budget_categories(tenant_id)
-
-        logger.info(
-            f"WhatsApp onboarding completed: tenant={tenant_id}, "
-            f"user={user_id}, phone={normalized_phone}"
-        )
-
-        return WhatsAppOnboardingResponse(
-            tenant_id=tenant_id,
-            home_name=request.home_name,
-            plan=request.plan,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"WhatsApp onboarding failed: {e}")
+    # Verify tenant exists
+    tenant = await pool.fetchrow(
+        "SELECT id, onboarding_completed FROM tenants WHERE id = $1",
+        tenant_id,
+    )
+    if not tenant:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al crear la cuenta. Intentá de nuevo.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Hogar no encontrado",
         )
+
+    # Update home_name and mark onboarding as complete
+    await pool.execute(
+        """
+        UPDATE tenants
+        SET home_name = $1, name = $1, onboarding_completed = true, updated_at = NOW()
+        WHERE id = $2
+        """,
+        request.home_name,
+        tenant_id,
+    )
+
+    logger.info(
+        f"Tenant setup completed: tenant={tenant_id}, home_name={request.home_name}"
+    )
+
+    return SetupCompleteResponse(
+        tenant_id=tenant_id,
+        home_name=request.home_name,
+    )
 
 
 @router.post(
@@ -454,11 +410,11 @@ async def create_pending_registration(
     _service_user: Annotated[CurrentUser, Depends(require_service_token)],
 ) -> WhatsAppPendingResponse:
     """
-    Create a pending registration for paid plans.
+    Create a pending registration for any plan (all plans go through checkout).
 
-    Called by the bot when a user chooses a paid plan via WhatsApp.
+    Called by the bot when a user chooses a plan via WhatsApp.
     Stores registration data, creates a Lemon Squeezy checkout,
-    and returns the checkout URL.
+    and returns the checkout URL. home_name is optional (collected post-payment).
 
     The LS webhook will create the actual tenant on payment confirmation.
 

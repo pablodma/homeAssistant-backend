@@ -499,9 +499,6 @@ class SubscriptionService:
         pending_repo = get_pending_registration_repository()
         onboarding_repo = get_onboarding_repository()
 
-        # Look up pending registration
-        pending = await pending_repo.get_by_checkout_id(None)
-        # Try by ID first
         pool = await get_pool()
         pending_row = await pool.fetchrow(
             "SELECT * FROM pending_registrations WHERE id = $1 AND status = 'pending'",
@@ -515,7 +512,7 @@ class SubscriptionService:
         pending = dict(pending_row)
         phone = pending["phone"]
         display_name = pending["display_name"]
-        home_name = pending["home_name"]
+        home_name = pending.get("home_name") or "Mi Hogar"
         plan_type = pending["plan_type"]
 
         logger.info(
@@ -524,13 +521,13 @@ class SubscriptionService:
         )
 
         try:
-            # Step 1: Create tenant
+            # Step 1: Create tenant (onboarding_completed=false, setup happens post-payment via bot)
             tenant_query = """
                 INSERT INTO tenants (
                     name, home_name, plan, 
                     onboarding_completed, timezone, language, currency, settings
                 )
-                VALUES ($1, $2, $3, true, 'America/Argentina/Buenos_Aires', 'es-AR', 'ARS', '{}'::jsonb)
+                VALUES ($1, $2, $3, false, 'America/Argentina/Buenos_Aires', 'es-AR', 'ARS', '{}'::jsonb)
                 RETURNING id
             """
             tenant_id = await pool.fetchval(tenant_query, home_name, home_name, plan_type)
