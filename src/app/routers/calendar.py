@@ -214,6 +214,46 @@ async def agent_list_events(
 
 
 @router.put(
+    "/agent/calendar/event/search",
+    response_model=AgentSearchOperationResponse,
+    tags=["Agent"],
+)
+async def agent_search_and_update_event(
+    tenant_id: UUID,
+    request: AgentUpdateEventRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    user_phone: str | None = Query(None, description="User phone for Google sync"),
+) -> AgentSearchOperationResponse:
+    """Search for an event by query and update it."""
+    return await calendar_service.agent_search_and_update_event(
+        tenant_id=tenant_id,
+        request=request,
+        user_phone=user_phone,
+    )
+
+
+@router.delete(
+    "/agent/calendar/event/search",
+    response_model=AgentSearchOperationResponse,
+    tags=["Agent"],
+)
+async def agent_search_and_delete_event(
+    tenant_id: UUID,
+    request: AgentDeleteEventRequest,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    user_phone: str | None = Query(None, description="User phone for Google sync"),
+) -> AgentSearchOperationResponse:
+    """Search for an event by query and delete it."""
+    return await calendar_service.agent_search_and_delete_event(
+        tenant_id=tenant_id,
+        request=request,
+        user_phone=user_phone,
+    )
+
+
+@router.put(
     "/agent/calendar/event/{event_id}",
     response_model=EventResponse,
     tags=["Agent"],
@@ -259,46 +299,6 @@ async def agent_delete_event(
         tenant_id=tenant_id,
         event_id=event_id,
         user_id_for_sync=current_user.id,
-    )
-
-
-@router.put(
-    "/agent/calendar/event/search",
-    response_model=AgentSearchOperationResponse,
-    tags=["Agent"],
-)
-async def agent_search_and_update_event(
-    tenant_id: UUID,
-    request: AgentUpdateEventRequest,
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
-    _: Annotated[None, Depends(validate_tenant_access)],
-    user_phone: str | None = Query(None, description="User phone for Google sync"),
-) -> AgentSearchOperationResponse:
-    """Search for an event by query and update it."""
-    return await calendar_service.agent_search_and_update_event(
-        tenant_id=tenant_id,
-        request=request,
-        user_phone=user_phone,
-    )
-
-
-@router.delete(
-    "/agent/calendar/event/search",
-    response_model=AgentSearchOperationResponse,
-    tags=["Agent"],
-)
-async def agent_search_and_delete_event(
-    tenant_id: UUID,
-    request: AgentDeleteEventRequest,
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
-    _: Annotated[None, Depends(validate_tenant_access)],
-    user_phone: str | None = Query(None, description="User phone for Google sync"),
-) -> AgentSearchOperationResponse:
-    """Search for an event by query and delete it."""
-    return await calendar_service.agent_search_and_delete_event(
-        tenant_id=tenant_id,
-        request=request,
-        user_phone=user_phone,
     )
 
 
