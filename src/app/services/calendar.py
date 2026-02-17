@@ -557,10 +557,6 @@ async def agent_create_event(
             user_id_for_sync = user["id"]
             actual_created_by = user["id"]
 
-    # #region agent log
-    print(f"[DEBUG] agent_create_event: original_created_by={created_by} actual_created_by={actual_created_by} phone={request.user_phone} user_found={user_id_for_sync is not None}")
-    # #endregion
-
     data = EventCreate(
         title=request.title,
         event_date=request.event_date,
