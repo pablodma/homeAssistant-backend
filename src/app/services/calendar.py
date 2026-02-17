@@ -1,5 +1,6 @@
 """Calendar service for business logic."""
 
+import logging
 import secrets
 from datetime import date, datetime, time, timedelta
 from uuid import UUID
@@ -550,10 +551,17 @@ async def agent_create_event(
 ) -> EventWithDuplicateCheck:
     """Create event from agent request."""
     user_id_for_sync = None
+    actual_created_by = created_by
     if request.user_phone:
         user = await calendar_repo.get_user_by_phone(request.user_phone)
         if user:
             user_id_for_sync = user["id"]
+            actual_created_by = user["id"]
+
+    # #region agent log
+    _logger = logging.getLogger(__name__)
+    _logger.info(f"agent_create_event created_by resolution: original={created_by} actual={actual_created_by} phone={request.user_phone} user_found={user_id_for_sync is not None}")
+    # #endregion
 
     data = EventCreate(
         title=request.title,
@@ -567,7 +575,7 @@ async def agent_create_event(
     return await create_event(
         tenant_id=tenant_id,
         data=data,
-        created_by=created_by,
+        created_by=actual_created_by,
         sync_to_google=True,
         user_id_for_sync=user_id_for_sync,
     )
