@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta
 from typing import Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 import httpx
@@ -52,8 +53,7 @@ def generate_auth_url(state: str, redirect_uri: str) -> str:
         "prompt": "consent",
         "state": state,
     }
-    query_string = "&".join(f"{k}={v}" for k, v in params.items())
-    return f"{GOOGLE_AUTH_URL}?{query_string}"
+    return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
 
 
 async def exchange_code_for_tokens(
