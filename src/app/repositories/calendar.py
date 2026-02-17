@@ -483,13 +483,32 @@ async def cleanup_expired_oauth_states() -> int:
 
 
 async def get_user_by_phone(phone: str) -> asyncpg.Record | None:
-    """Get user by phone number."""
+    """Get user by phone number.
+
+    Normalizes phone to E.164 format and searches with variants
+    to handle Argentina mobile numbers (with/without '9' prefix).
+    """
+    normalized = phone.strip()
+    if not normalized.startswith("+"):
+        normalized = f"+{normalized}"
+
+    # Argentina mobile normalization: +54XX → +549XX
+    if normalized.startswith("+54") and not normalized.startswith("+549"):
+        rest = normalized[3:]
+        if len(rest) == 10:
+            normalized = f"+549{rest}"
+
+    phone_variants = [normalized]
+    if normalized.startswith("+549"):
+        phone_variants.append(f"+54{normalized[4:]}")
+
     query = """
         SELECT id, tenant_id, phone, email, display_name, role
         FROM users
-        WHERE phone = $1
+        WHERE phone = ANY($1)
+          AND is_active = true
     """
-    return await fetch_one(query, phone)
+    return await fetch_one(query, phone_variants)
 
 
 async def get_user_by_id(user_id: UUID) -> asyncpg.Record | None:

@@ -1,6 +1,5 @@
 """Calendar service for business logic."""
 
-import logging
 import secrets
 from datetime import date, datetime, time, timedelta
 from uuid import UUID
@@ -559,8 +558,7 @@ async def agent_create_event(
             actual_created_by = user["id"]
 
     # #region agent log
-    _logger = logging.getLogger(__name__)
-    _logger.info(f"agent_create_event created_by resolution: original={created_by} actual={actual_created_by} phone={request.user_phone} user_found={user_id_for_sync is not None}")
+    print(f"[DEBUG] agent_create_event: original_created_by={created_by} actual_created_by={actual_created_by} phone={request.user_phone} user_found={user_id_for_sync is not None}")
     # #endregion
 
     data = EventCreate(
