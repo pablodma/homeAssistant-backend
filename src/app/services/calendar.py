@@ -433,6 +433,26 @@ async def check_availability(
 # =============================================================================
 
 
+def _validate_redirect_url(url: str | None) -> str | None:
+    """Validate redirect_url is same-origin or a known allowed origin."""
+    if not url:
+        return None
+    from urllib.parse import urlparse
+
+    parsed = urlparse(url)
+    allowed_hosts = {
+        urlparse(settings.frontend_url).hostname,
+        urlparse(settings.calendar_oauth_success_url).hostname,
+    }
+    allowed_hosts.discard(None)
+
+    if parsed.hostname not in allowed_hosts:
+        return None
+    if parsed.scheme not in ("http", "https"):
+        return None
+    return url
+
+
 async def initiate_google_oauth(
     user_phone: str,
     tenant_id: UUID | None,
@@ -442,11 +462,13 @@ async def initiate_google_oauth(
     state = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
 
+    safe_redirect = _validate_redirect_url(redirect_url)
+
     await calendar_repo.create_oauth_state(
         state=state,
         user_phone=user_phone,
         tenant_id=tenant_id,
-        redirect_url=redirect_url,
+        redirect_url=safe_redirect,
         expires_at=expires_at,
     )
 

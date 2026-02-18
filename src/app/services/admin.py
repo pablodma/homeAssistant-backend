@@ -253,10 +253,15 @@ class AdminService:
         bot_url = settings.bot_internal_url.rstrip("/")
         endpoint = f"{bot_url}/internal/qa-fix-issue"
 
+        headers = {}
+        if settings.bot_internal_secret:
+            headers["x-internal-secret"] = settings.bot_internal_secret
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 endpoint,
                 json={"issue_id": issue_id},
+                headers=headers,
             )
 
         if response.status_code not in (200, 202):

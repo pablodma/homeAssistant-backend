@@ -63,7 +63,11 @@ async def create_subscription(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except RuntimeError as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+        logger.error("Payment provider error creating subscription", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Error al comunicarse con el proveedor de pagos. Intentá nuevamente.",
+        )
     except Exception as e:
         logger.exception(f"Unexpected error creating subscription: {e}")
         raise HTTPException(
@@ -300,7 +304,11 @@ async def create_upgrade_checkout(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except RuntimeError as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+        logger.error("Payment provider error upgrading subscription", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Error al comunicarse con el proveedor de pagos. Intentá nuevamente.",
+        )
 
 
 @router.post("/cancel-by-tenant", response_model=SubscriptionCancelResponse)
@@ -337,24 +345,27 @@ async def lemonsqueezy_webhook(
     request: Request,
     x_signature: Annotated[str | None, Header(alias="x-signature")] = None,
 ) -> LemonSqueezyWebhookResponse:
-    """
-    Receive webhooks from Lemon Squeezy.
+    """Receive webhooks from Lemon Squeezy.
 
-    This endpoint processes subscription and payment events.
     The signature is validated using HMAC-SHA256 with the webhook secret.
+    Requests without a valid signature are rejected.
     """
-    # Read raw body for signature verification
+    if not x_signature:
+        logger.warning("LS webhook missing x-signature header")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing webhook signature",
+        )
+
     body = await request.body()
 
-    # Verify signature
     ls_client = get_ls_client()
-    if x_signature:
-        if not ls_client.verify_webhook_signature(body, x_signature):
-            logger.warning("Invalid LS webhook signature")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid webhook signature",
-            )
+    if not ls_client.verify_webhook_signature(body, x_signature):
+        logger.warning("Invalid LS webhook signature")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook signature",
+        )
 
     # Parse JSON body
     try:

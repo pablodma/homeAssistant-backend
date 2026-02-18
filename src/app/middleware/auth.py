@@ -167,19 +167,28 @@ async def require_service_token(
         raise credentials_exception
 
 
-async def validate_tenant_access(
-    tenant_id: Annotated[UUID, Path(description="Tenant ID")],
-    current_user: Annotated[CurrentUser, Depends(get_current_user)],
-) -> None:
-    """Validate user has access to the requested tenant."""
-    # System role (service tokens) are trusted internal services (e.g. the bot)
-    # that need to operate on behalf of any tenant (multi-tenant bot resolves
-    # tenant dynamically from phone number).
+def check_tenant_access(current_user: CurrentUser, tenant_id: UUID) -> None:
+    """Inline tenant access check for use outside of Depends().
+
+    Raises 403 if the user doesn't belong to the requested tenant.
+    Service tokens (role=system) bypass this check.
+    """
     if current_user.role == "system":
         return
-    
     if current_user.tenant_id != tenant_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied to this tenant",
         )
+
+
+async def validate_tenant_access(
+    tenant_id: Annotated[UUID, Path(description="Tenant ID")],
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+) -> None:
+    """FastAPI dependency for tenant access validation.
+
+    Use as Depends(validate_tenant_access) in endpoint signatures.
+    For inline checks, use check_tenant_access() instead.
+    """
+    check_tenant_access(current_user, tenant_id)

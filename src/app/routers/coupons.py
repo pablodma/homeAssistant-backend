@@ -6,10 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..middleware.auth import CurrentUser, get_current_user_optional
-
-# Default admin UUID for unauthenticated requests (internal admin)
-DEFAULT_ADMIN_ID = UUID("00000000-0000-0000-0000-000000000001")
+from ..middleware.auth import CurrentUser, get_current_user_optional, require_admin
 from ..schemas.coupon import (
     CouponCreate,
     CouponListResponse,
@@ -71,7 +68,7 @@ admin_router = APIRouter(prefix="/admin/coupons", tags=["Admin - Coupons"])
 
 @admin_router.get("", response_model=CouponListResponse)
 async def list_coupons(
-    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
     active_only: bool = False,
     limit: int = 100,
     offset: int = 0,
@@ -95,7 +92,7 @@ async def list_coupons(
 @admin_router.post("", response_model=CouponResponse, status_code=status.HTTP_201_CREATED)
 async def create_coupon(
     request: CouponCreate,
-    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
 ) -> CouponResponse:
     """
     Create a new coupon.
@@ -113,8 +110,8 @@ async def create_coupon(
     - active: Whether the coupon is active (default: true)
     """
     service = get_coupon_service()
-    user_id = current_user.id if current_user else DEFAULT_ADMIN_ID
-    
+    user_id = current_user.id
+
     try:
         return await service.create_coupon(
             data=request,
@@ -130,7 +127,7 @@ async def create_coupon(
 @admin_router.get("/{coupon_id}", response_model=CouponResponse)
 async def get_coupon(
     coupon_id: UUID,
-    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
 ) -> CouponResponse:
     """Get coupon details by ID (admin only)."""
     service = get_coupon_service()
@@ -148,7 +145,7 @@ async def get_coupon(
 @admin_router.get("/{coupon_id}/stats", response_model=CouponStatsResponse)
 async def get_coupon_stats(
     coupon_id: UUID,
-    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
 ) -> CouponStatsResponse:
     """
     Get coupon statistics (admin only).
@@ -174,7 +171,7 @@ async def get_coupon_stats(
 async def update_coupon(
     coupon_id: UUID,
     request: CouponUpdate,
-    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
 ) -> CouponResponse:
     """
     Update a coupon (admin only).
@@ -200,7 +197,7 @@ async def update_coupon(
 @admin_router.delete("/{coupon_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_coupon(
     coupon_id: UUID,
-    current_user: Annotated[CurrentUser | None, Depends(get_current_user_optional)] = None,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
     soft: bool = True,
 ) -> None:
     """

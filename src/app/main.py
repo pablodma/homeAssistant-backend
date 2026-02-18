@@ -18,8 +18,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler."""
     # Startup
     settings = get_settings()
+    settings.validate_production_secrets()
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
-    
+
     # Initialize database pool (non-blocking)
     try:
         await get_pool()

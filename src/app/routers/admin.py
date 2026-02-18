@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 logger = structlog.get_logger()
 
-from ..middleware.auth import get_current_user
+from ..middleware.auth import require_admin
 from ..schemas.admin import (
     AgentInfo,
     AgentPromptHistory,
@@ -57,7 +57,7 @@ def get_admin_service() -> AdminService:
 @router.get("/agents", response_model=list[AgentInfo])
 async def list_agents(
     service: AdminService = Depends(get_admin_service),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_admin),
 ) -> list[AgentInfo]:
     """List all available agents with their status.
 
@@ -75,7 +75,7 @@ async def list_agents(
 @router.get("/agents/{agent_name}/prompt", response_model=AgentPromptWithDefault)
 async def get_agent_prompt(
     agent_name: str,
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_admin),
 ) -> AgentPromptWithDefault:
     """Get the active prompt for an agent.
 
@@ -113,7 +113,7 @@ async def get_agent_prompt(
 async def update_agent_prompt(
     agent_name: str,
     body: AgentPromptUpdate,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_admin),
 ) -> PromptUpdateResponse:
     """Update the prompt for an agent via GitHub API.
 
@@ -161,7 +161,7 @@ async def update_agent_prompt(
 async def get_prompt_history(
     agent_name: str,
     limit: int = Query(10, ge=1, le=50),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_admin),
 ) -> list[AgentPromptHistory]:
     """Get version history for an agent's prompt.
 
@@ -186,7 +186,7 @@ async def list_interactions(
     end_date: Optional[datetime] = None,
     search: Optional[str] = None,
     service: AdminService = Depends(get_admin_service),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_admin),
 ) -> InteractionListResponse:
     """List bot interactions with filtering and pagination.
 
@@ -208,7 +208,7 @@ async def list_interactions(
 async def get_interaction(
     interaction_id: UUID,
     service: AdminService = Depends(get_admin_service),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_admin),
 ) -> InteractionResponse:
     """Get details of a specific interaction.
 
@@ -230,7 +230,7 @@ async def get_interaction(
 async def get_stats(
     days: int = Query(30, ge=1, le=365),
     service: AdminService = Depends(get_admin_service),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_admin),
 ) -> StatsResponse:
     """Get statistics for the admin dashboard.
 
@@ -261,7 +261,7 @@ async def list_quality_issues(
     start_date: Optional[datetime] = None,
     end_date: Optional[datetime] = None,
     service: AdminService = Depends(get_admin_service),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_admin),
 ) -> QualityIssueListResponse:
     """List quality issues with filtering and pagination.
 
@@ -290,7 +290,7 @@ async def list_quality_issues(
 async def get_quality_issue_counts(
     days: int = Query(30, ge=1, le=365),
     service: AdminService = Depends(get_admin_service),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_admin),
 ) -> QualityIssueCounts:
     """Get counts of quality issues for summary cards.
 
@@ -303,7 +303,7 @@ async def get_quality_issue_counts(
 async def get_quality_issue(
     issue_id: UUID,
     service: AdminService = Depends(get_admin_service),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_admin),
 ) -> QualityIssueResponse:
     """Get details of a specific quality issue.
 
@@ -321,7 +321,7 @@ async def resolve_quality_issue(
     issue_id: UUID,
     body: QualityIssueResolve,
     service: AdminService = Depends(get_admin_service),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_admin),
 ) -> QualityIssueResponse:
     """Mark a quality issue as resolved.
 
@@ -342,7 +342,7 @@ async def save_quality_issue_insight(
     issue_id: UUID,
     body: QualityIssueInsightUpdate,
     service: AdminService = Depends(get_admin_service),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_admin),
 ) -> QualityIssueResponse:
     """Save admin insight for a quality issue.
 
@@ -362,7 +362,7 @@ async def save_quality_issue_insight(
 async def apply_quality_issue_fix(
     issue_id: UUID,
     service: AdminService = Depends(get_admin_service),
-    _: CurrentUser = Depends(get_current_user),
+    _: CurrentUser = Depends(require_admin),
 ) -> ApplyFixResponse:
     """Apply a fix for a specific quality issue.
 
@@ -383,7 +383,7 @@ async def apply_quality_issue_fix(
         )
         raise HTTPException(
             status_code=500,
-            detail={"error": "Failed to apply fix", "message": str(e)},
+            detail="Failed to apply fix. Check server logs for details.",
         )
 
 
@@ -395,7 +395,7 @@ async def apply_quality_issue_fix(
 @router.get("/qa-review/history", response_model=list[QAReviewHistoryItem])
 async def get_qa_review_history(
     limit: int = Query(20, ge=1, le=100),
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_admin),
 ) -> list[QAReviewHistoryItem]:
     """Get history of QA review cycles.
 
@@ -413,14 +413,14 @@ async def get_qa_review_history(
         logger.error("QA review history failed", error=str(e), traceback=traceback.format_exc())
         raise HTTPException(
             status_code=500,
-            detail={"error": "Failed to get review history", "message": str(e)},
+            detail="Failed to get review history. Check server logs for details.",
         )
 
 
 @router.post("/qa-review/rollback/{revision_id}", response_model=RollbackResponse)
 async def rollback_prompt_revision(
     revision_id: UUID,
-    user: CurrentUser = Depends(get_current_user),
+    user: CurrentUser = Depends(require_admin),
 ) -> RollbackResponse:
     """Rollback a prompt revision.
 
@@ -442,5 +442,5 @@ async def rollback_prompt_revision(
         logger.error("Rollback endpoint failed", error=str(e), traceback=traceback.format_exc())
         raise HTTPException(
             status_code=500,
-            detail={"error": "Rollback failed", "message": str(e)},
+            detail="Rollback failed. Check server logs for details.",
         )

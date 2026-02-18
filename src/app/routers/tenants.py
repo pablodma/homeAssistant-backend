@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..middleware.auth import (
     CurrentUser,
+    check_tenant_access,
     get_current_user,
     require_admin,
-    validate_tenant_access,
 )
 from ..schemas.tenant import (
     InvitationResponse,
@@ -45,7 +45,7 @@ async def get_tenant(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> TenantResponse:
     """Get tenant details."""
-    validate_tenant_access(current_user.tenant_id, tenant_id)
+    check_tenant_access(current_user, tenant_id)
     
     # TODO: Fetch tenant from database
     raise NotImplementedError("Get tenant not yet implemented")
@@ -58,7 +58,7 @@ async def update_tenant_settings(
     current_user: Annotated[CurrentUser, Depends(require_admin)],
 ) -> TenantResponse:
     """Update tenant settings. Requires admin or owner role."""
-    validate_tenant_access(current_user.tenant_id, tenant_id)
+    check_tenant_access(current_user, tenant_id)
     
     # TODO: Update tenant in database
     raise NotImplementedError("Update tenant not yet implemented")
@@ -74,7 +74,7 @@ async def create_invitation(
     current_user: Annotated[CurrentUser, Depends(require_admin)],
 ) -> InvitationResponse:
     """Create invitation code. Requires admin or owner role."""
-    validate_tenant_access(current_user.tenant_id, tenant_id)
+    check_tenant_access(current_user, tenant_id)
     
     # TODO: Create invitation in database
     raise NotImplementedError("Create invitation not yet implemented")

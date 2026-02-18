@@ -59,6 +59,7 @@ class Settings(BaseSettings):
 
     # Bot internal URL (for proxying fix requests to homeai-assis)
     bot_internal_url: str = ""
+    bot_internal_secret: str = ""
 
     # NOTE: Anthropic/QA Review AI logic moved to homeai-assis.
     # homeai-api only serves history + rollback (DB + GitHub operations).
@@ -87,6 +88,13 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production."""
         return self.app_env == "production"
+
+    def validate_production_secrets(self) -> None:
+        """Raise on insecure defaults in production."""
+        if self.is_production and self.jwt_secret_key == "change-me-in-production":
+            raise ValueError(
+                "JWT_SECRET_KEY must be changed from its default value in production"
+            )
 
 
 @lru_cache

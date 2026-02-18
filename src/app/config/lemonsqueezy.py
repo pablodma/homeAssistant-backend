@@ -252,15 +252,15 @@ class LemonSqueezyClient:
             return False
 
     def verify_webhook_signature(self, payload: bytes, signature: str) -> bool:
-        """
-        Verify webhook signature from Lemon Squeezy.
+        """Verify webhook signature from Lemon Squeezy.
 
         LS webhooks use HMAC-SHA256 with the webhook secret as key.
         The signature is sent in the X-Signature header.
+        Returns False if the secret is not configured.
         """
         if not self._webhook_secret:
-            logger.warning("Webhook secret not configured, skipping verification")
-            return True  # Allow in development
+            logger.error("LS_WEBHOOK_SECRET not configured — rejecting webhook")
+            return False
 
         expected = hmac.new(
             self._webhook_secret.encode(),

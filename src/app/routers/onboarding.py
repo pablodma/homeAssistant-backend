@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ..config.database import get_pool
 
-from ..middleware.auth import CurrentUser, get_current_user, require_service_token, validate_tenant_access
+from ..middleware.auth import CurrentUser, check_tenant_access, get_current_user, require_service_token
 from ..repositories.agent_onboarding import get_agent_onboarding_repository
 from ..repositories.onboarding import get_onboarding_repository
 from ..repositories.pending_registration import get_pending_registration_repository
@@ -125,19 +125,18 @@ async def complete_onboarding(
 
 
 # ============================================================================
-# Phone Lookup (Public - used by bot)
+# Phone Lookup (Service token required - used by bot)
 # ============================================================================
 
 @router.get("/phone/lookup", response_model=PhoneLookupResponse)
 async def lookup_phone(
     phone: str = Query(..., description="Phone number in E.164 format"),
+    _service_user: Annotated[CurrentUser, Depends(require_service_token)] = None,
 ) -> PhoneLookupResponse:
-    """
-    Look up tenant by phone number.
-    
-    This endpoint is used by the bot for multitenancy resolution.
-    It's intentionally public (no auth) so the bot can call it.
-    Searches the users table directly.
+    """Look up tenant by phone number.
+
+    Used by the bot for multitenancy resolution.
+    Requires service token (role=system).
     """
     repo = get_onboarding_repository()
     result = await repo.get_tenant_by_phone(phone)
@@ -173,7 +172,7 @@ async def list_members(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> list[MemberResponse]:
     """List all members of a tenant."""
-    validate_tenant_access(current_user.tenant_id, tenant_id)
+    check_tenant_access(current_user, tenant_id)
     
     repo = get_onboarding_repository()
     members = await repo.get_members_by_tenant(tenant_id)
@@ -206,7 +205,7 @@ async def add_member(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> MemberResponse:
     """Add a new member to a tenant."""
-    validate_tenant_access(current_user.tenant_id, tenant_id)
+    check_tenant_access(current_user, tenant_id)
     
     repo = get_onboarding_repository()
     
@@ -244,7 +243,7 @@ async def remove_member(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> None:
     """Remove a member from a tenant (soft delete)."""
-    validate_tenant_access(current_user.tenant_id, tenant_id)
+    check_tenant_access(current_user, tenant_id)
     
     # Can't remove yourself
     if user_id == current_user.id:
