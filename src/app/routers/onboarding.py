@@ -446,6 +446,7 @@ async def create_pending_registration(
             home_name=request.home_name,
             plan_type=request.plan_type,
             coupon_code=request.coupon_code,
+            email=request.email,
         )
 
         # Generate Lemon Squeezy checkout
@@ -466,7 +467,7 @@ async def create_pending_registration(
         if ls_client.is_configured:
             checkout = await ls_client.create_checkout(
                 variant_id=variant_id,
-                email=f"{normalized_phone}@whatsapp.placeholder",
+                email=request.email,
                 custom_data={
                     "pending_registration_id": str(pending["id"]),
                     "phone": normalized_phone,

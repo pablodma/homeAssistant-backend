@@ -17,6 +17,7 @@ class PendingRegistrationRepository:
         plan_type: str,
         coupon_code: str | None = None,
         ls_checkout_id: str | None = None,
+        email: str | None = None,
     ) -> dict[str, Any]:
         """Create a new pending registration.
 
@@ -27,6 +28,7 @@ class PendingRegistrationRepository:
             plan_type: Plan type (family, premium).
             coupon_code: Optional coupon code.
             ls_checkout_id: Optional Lemon Squeezy checkout ID.
+            email: User's email for invoicing.
 
         Returns:
             The created pending registration record.
@@ -36,9 +38,9 @@ class PendingRegistrationRepository:
         query = """
             INSERT INTO pending_registrations (
                 phone, display_name, home_name, plan_type, 
-                coupon_code, ls_checkout_id
+                coupon_code, ls_checkout_id, email
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
         """
 
@@ -50,6 +52,7 @@ class PendingRegistrationRepository:
             plan_type,
             coupon_code,
             ls_checkout_id,
+            email,
         )
         return dict(row)
 

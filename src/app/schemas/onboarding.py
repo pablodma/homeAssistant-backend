@@ -174,6 +174,7 @@ class WhatsAppPendingRequest(BaseModel):
     
     phone: str = Field(..., description="Phone number in E.164 format")
     display_name: str = Field(..., min_length=1, max_length=100)
+    email: str = Field(..., description="User email for invoicing and checkout pre-fill")
     home_name: str | None = Field(default=None, description="Optional - collected post-payment")
     plan_type: Literal["starter", "family", "premium"]
     coupon_code: str | None = None
@@ -186,6 +187,15 @@ class WhatsAppPendingRequest(BaseModel):
         if not re.match(r"^\+\d{10,15}$", v):
             raise ValueError("Phone must be in E.164 format")
         return v
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        """Basic email format validation."""
+        import re
+        if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", v):
+            raise ValueError("Invalid email format")
+        return v.lower().strip()
 
 
 class WhatsAppPendingResponse(BaseModel):
