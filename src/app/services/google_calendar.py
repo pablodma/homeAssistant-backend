@@ -1,6 +1,6 @@
 """Google Calendar API wrapper service."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
 from uuid import UUID
@@ -141,10 +141,10 @@ async def get_valid_credentials(user_id: UUID) -> Credentials | None:
     )
 
     # Check if token needs refresh (with 5 min buffer)
-    if creds_record["token_expires_at"] <= datetime.utcnow() + timedelta(minutes=5):
+    if creds_record["token_expires_at"] <= datetime.now(timezone.utc) + timedelta(minutes=5):
         try:
             token_data = await refresh_access_token(creds_record["refresh_token"])
-            expires_at = datetime.utcnow() + timedelta(seconds=token_data["expires_in"])
+            expires_at = datetime.now(timezone.utc) + timedelta(seconds=token_data["expires_in"])
 
             await calendar_repo.update_google_tokens(
                 user_id=user_id,

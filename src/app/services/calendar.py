@@ -1,7 +1,7 @@
 """Calendar service for business logic."""
 
 import secrets
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -98,7 +98,7 @@ async def create_event(
                 event_id=record["id"],
                 google_event_id=google_event["id"],
                 sync_status="synced",
-                last_synced_at=datetime.utcnow(),
+                last_synced_at=datetime.now(timezone.utc),
             )
 
             event.google_event_id = google_event["id"]
@@ -177,8 +177,8 @@ async def list_events(
                     end_datetime=local_data["end_datetime"],
                     timezone=local_data["timezone"],
                     recurrence_rule=None,
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
                     created_by=None,
                     google_event_id=local_data["google_event_id"],
                     sync_status=SyncStatus.SYNCED,
@@ -253,7 +253,7 @@ async def update_event(
                 tenant_id=tenant_id,
                 event_id=event_id,
                 sync_status="synced",
-                last_synced_at=datetime.utcnow(),
+                last_synced_at=datetime.now(timezone.utc),
             )
         except gcal_service.GoogleCalendarError:
             pass
@@ -394,8 +394,8 @@ async def check_availability(
                         end_datetime=g_end,
                         timezone=local_data["timezone"],
                         recurrence_rule=None,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
+                        created_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
                         created_by=None,
                         google_event_id=local_data["google_event_id"],
                         sync_status=SyncStatus.SYNCED,
@@ -440,7 +440,7 @@ async def initiate_google_oauth(
 ) -> GoogleOAuthResponse:
     """Initiate Google OAuth flow."""
     state = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(minutes=15)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
 
     await calendar_repo.create_oauth_state(
         state=state,
@@ -488,7 +488,7 @@ async def handle_google_oauth_callback(
     if not user:
         return False, "User not found"
 
-    expires_at = datetime.utcnow() + timedelta(seconds=token_data.get("expires_in", 3600))
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=token_data.get("expires_in", 3600))
 
     await calendar_repo.upsert_google_credentials(
         user_id=user["id"],
@@ -515,7 +515,7 @@ async def get_google_connection_status(
             message="Google Calendar no conectado. Conectá tu cuenta para sincronizar eventos.",
         )
 
-    if creds["token_expires_at"] <= datetime.utcnow():
+    if creds["token_expires_at"] <= datetime.now(timezone.utc):
         try:
             await gcal_service.get_valid_credentials(user_id)
             return GoogleCalendarConnectionStatus(
