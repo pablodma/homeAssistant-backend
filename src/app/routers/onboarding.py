@@ -9,10 +9,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from ..config.database import get_pool
 
 from ..middleware.auth import CurrentUser, get_current_user, require_service_token, validate_tenant_access
+from ..repositories.agent_onboarding import get_agent_onboarding_repository
 from ..repositories.onboarding import get_onboarding_repository
 from ..repositories.pending_registration import get_pending_registration_repository
 from ..schemas.onboarding import (
     AddMemberRequest,
+    AgentOnboardingCompleteRequest,
+    AgentOnboardingCompleteResponse,
+    AgentOnboardingStatusResponse,
     BotInviteMemberRequest,
     BotInviteMemberResponse,
     MemberResponse,
@@ -508,3 +512,59 @@ async def create_pending_registration(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error al procesar la solicitud",
         )
+
+
+# ============================================================================
+# Agent First-Time Onboarding (used by bot via service token)
+# ============================================================================
+
+
+@router.get(
+    "/agent-onboarding/status",
+    response_model=AgentOnboardingStatusResponse,
+)
+async def get_agent_onboarding_status(
+    phone: str = Query(..., description="Phone number"),
+    agent: str = Query(..., description="Agent name (finance, calendar, etc.)"),
+    _service_user: Annotated[CurrentUser, Depends(require_service_token)] = None,
+) -> AgentOnboardingStatusResponse:
+    """Check if a user has completed first-time onboarding for an agent.
+
+    Used by the bot to detect first-time use per agent.
+    Requires service token (role=system).
+    """
+    repo = get_agent_onboarding_repository()
+    is_first_time = await repo.get_status(phone, agent)
+
+    return AgentOnboardingStatusResponse(
+        is_first_time=is_first_time,
+        agent_name=agent,
+    )
+
+
+@router.post(
+    "/agent-onboarding/complete",
+    response_model=AgentOnboardingCompleteResponse,
+)
+async def complete_agent_onboarding(
+    request: AgentOnboardingCompleteRequest,
+    _service_user: Annotated[CurrentUser, Depends(require_service_token)],
+) -> AgentOnboardingCompleteResponse:
+    """Mark agent first-time onboarding as completed for a user.
+
+    Called by the bot when a user finishes the guided setup for an agent.
+    Requires service token (role=system).
+    """
+    repo = get_agent_onboarding_repository()
+    success = await repo.complete(request.phone, request.agent_name)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuario no encontrado",
+        )
+
+    return AgentOnboardingCompleteResponse(
+        success=True,
+        agent_name=request.agent_name,
+    )
