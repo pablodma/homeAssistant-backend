@@ -40,13 +40,17 @@ class PhoneMember(BaseModel):
 
 class OnboardingRequest(BaseModel):
     """Request to complete onboarding and create tenant."""
-    
+
     home_name: str = Field(..., min_length=2, max_length=100, description="Household name")
     plan: Literal["starter", "family", "premium"] = Field(default="starter")
     members: list[PhoneMember] = Field(..., min_length=1, description="Household members")
     timezone: str = Field(default="America/Argentina/Buenos_Aires")
     language: str = Field(default="es-AR")
     currency: str = Field(default="ARS")
+    onboarding_token: str | None = Field(
+        default=None,
+        description="Optional JWT from web-link (WhatsApp flow); sets owner.phone from token",
+    )
     
     @field_validator("members")
     @classmethod
@@ -167,6 +171,27 @@ class WhatsAppOnboardingResponse(BaseModel):
     home_name: str
     plan: str
     message: str = "Cuenta creada exitosamente"
+
+
+class WebLinkRequest(BaseModel):
+    """Request to generate a web onboarding link for an unregistered phone (service token)."""
+
+    phone: str = Field(..., description="Phone number in E.164 format")
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        import re
+        if not re.match(r"^\+\d{10,15}$", v):
+            raise ValueError("Phone must be in E.164 format")
+        return v
+
+
+class WebLinkResponse(BaseModel):
+    """Response with URL for web onboarding (or already_registered)."""
+
+    url: str | None = Field(default=None, description="Full URL with token; null if already registered")
+    already_registered: bool = Field(default=False, description="True if phone is already in users")
 
 
 class WhatsAppPendingRequest(BaseModel):

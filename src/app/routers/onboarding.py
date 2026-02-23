@@ -1,10 +1,12 @@
 """Onboarding endpoints for tenant creation and member management."""
 
 import logging
+import time
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from jose import JWTError, jwt
 
 from ..config.database import get_pool
 
@@ -12,6 +14,7 @@ from ..middleware.auth import CurrentUser, check_tenant_access, get_current_user
 from ..repositories.agent_onboarding import get_agent_onboarding_repository
 from ..repositories.onboarding import get_onboarding_repository
 from ..repositories.pending_registration import get_pending_registration_repository
+from ..config import get_settings
 from ..schemas.onboarding import (
     AddMemberRequest,
     AgentOnboardingCompleteRequest,
@@ -27,6 +30,8 @@ from ..schemas.onboarding import (
     SetupCompleteRequest,
     SetupCompleteResponse,
     SubscriptionUsageResponse,
+    WebLinkRequest,
+    WebLinkResponse,
     WhatsAppPendingRequest,
     WhatsAppPendingResponse,
 )
@@ -60,6 +65,43 @@ async def get_onboarding_status(
     )
 
 
+@router.post(
+    "/onboarding/web-link",
+    response_model=WebLinkResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def create_web_onboarding_link(
+    request: WebLinkRequest,
+    _service_user: Annotated[CurrentUser, Depends(require_service_token)],
+) -> WebLinkResponse:
+    """
+    Generate a signed URL for web onboarding (unregistered phone).
+
+    Called by the bot when a user writes from a number not in users.
+    Returns a URL with a short-lived token so the frontend can complete
+    onboarding and the backend can attach owner.phone from the token.
+    If the phone is already registered, returns already_registered=True and url=null.
+    """
+    repo = get_onboarding_repository()
+    settings = get_settings()
+
+    if await repo.check_phone_exists(request.phone):
+        return WebLinkResponse(url=None, already_registered=True)
+
+    exp_seconds = 24 * 3600  # 24 hours
+    payload = {
+        "phone": request.phone,
+        "exp": int(time.time()) + exp_seconds,
+    }
+    token = jwt.encode(
+        payload,
+        settings.onboarding_web_link_secret,
+        algorithm="HS256",
+    )
+    url = f"{settings.frontend_url.rstrip('/')}/onboarding?token={token}"
+    return WebLinkResponse(url=url, already_registered=False)
+
+
 @router.post("/onboarding", response_model=OnboardingResponse, status_code=status.HTTP_201_CREATED)
 async def complete_onboarding(
     request: OnboardingRequest,
@@ -67,14 +109,36 @@ async def complete_onboarding(
 ) -> OnboardingResponse:
     """
     Complete onboarding by creating a new tenant.
-    
+
     - Creates a new tenant with the provided settings
     - Updates the owner user with their phone
     - Creates user records for each additional member
     - Creates default budget categories
+    - If onboarding_token is present (WhatsApp flow), validates it and sets owner.phone from token
     """
     repo = get_onboarding_repository()
-    
+    settings = get_settings()
+
+    token_phone: str | None = None
+    if request.onboarding_token:
+        try:
+            payload = jwt.decode(
+                request.onboarding_token,
+                settings.onboarding_web_link_secret,
+                algorithms=["HS256"],
+            )
+            token_phone = payload.get("phone")
+            if not token_phone:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid onboarding token (missing phone)",
+                )
+        except JWTError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or expired onboarding token",
+            )
+
     # Check if any phone is already registered
     for member in request.members:
         if await repo.check_phone_exists(member.phone):
@@ -82,7 +146,7 @@ async def complete_onboarding(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Phone {member.phone} is already registered to another household",
             )
-    
+
     # Create the tenant
     tenant_id = await repo.create_tenant(
         home_name=request.home_name,
@@ -92,17 +156,18 @@ async def complete_onboarding(
         language=request.language,
         currency=request.currency,
     )
-    
+
     # Update owner's tenant and phone
     await repo.update_user_tenant(current_user.id, tenant_id)
-    
+
     # Process members
     for i, member in enumerate(request.members):
         is_owner_member = (i == 0 and member.role == "admin")
-        
+
         if is_owner_member:
-            # First admin = the owner. Update their existing user record with phone.
-            await repo.update_user_phone(current_user.id, member.phone)
+            # First admin = the owner. Use token phone if from WhatsApp link, else form member.
+            owner_phone = token_phone if token_phone else member.phone
+            await repo.update_user_phone(current_user.id, owner_phone)
         else:
             # Additional members: create new user records
             await repo.create_member(

@@ -49,8 +49,14 @@ class Settings(BaseSettings):
     github_repo: str = "pablodma/homeAssistant-asistant"  # owner/repo
     github_branch: str = "main"
 
-    # Frontend URL (para redirects post-pago)
+    # Frontend URL (para redirects post-pago y links de onboarding web)
     frontend_url: str = "http://localhost:3000"
+
+    # Onboarding web link: secret para firmar tokens (phone + exp) que redirigen desde WhatsApp
+    onboarding_web_link_secret: str = Field(
+        default="change-me-onboarding-link",
+        description="Secret to sign JWT for web onboarding link (bot sends link to unregistered phones)",
+    )
 
     # Lemon Squeezy
     ls_api_key: str = ""  # API key de Lemon Squeezy

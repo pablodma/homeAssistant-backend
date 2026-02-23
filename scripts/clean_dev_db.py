@@ -1,40 +1,57 @@
 """Clean all client/tenant data from the development database.
 Preserves platform config: plan_pricing, coupons.
 
-Usage: python scripts/clean_dev_db.py [--confirm]
+Usage (Railway CLI):
+  cd homeai-api
+  railway link   # select project + environment that has DATABASE_URL (e.g. homeAssistant-backend)
+  railway run python scripts/clean_dev_db.py           # dry run
+  railway run python scripts/clean_dev_db.py --confirm # delete all tenants and conversations
 """
 import asyncio
-import asyncpg
+import os
 import sys
 
-DB_URL = "postgresql://postgres:IUnCuWxZbyfGFqlychBTsmLdlXvyfdCj@shuttle.proxy.rlwy.net:51510/railway"
+import asyncpg
+
+DB_URL = os.environ.get("DATABASE_URL")
+if not DB_URL:
+    print("ERROR: DATABASE_URL is not set. Use: railway run python scripts/clean_dev_db.py [--confirm]")
+    sys.exit(1)
 
 # Order matters: children first, then parents (respecting foreign keys)
 TABLES_TO_CLEAN = [
-    # Leaf tables (no dependents)
+    # Conversations (backend LLM memory)
+    "conversation_messages",
+    "conversations",
+    # Chat (bot)
     "chat_messages",
     "agent_interactions",
     "quality_issues",
     "prompt_revisions",
     "qa_review_cycles",
-    # Bot domain tables
+    "user_agent_onboarding",
+    # Bot domain
     "reminders",
     "shopping_items",
+    "shopping_lists",
     "vehicle_reminders",
     "vehicle_services",
     "vehicles",
-    # Backend domain tables
+    # Backend domain
     "expenses",
     "events",
     "google_calendar_credentials",
     "pending_registrations",
-    # Sessions
+    "audit_logs",
     "chat_sessions",
-    # Subscriptions (before users/tenants)
+    # Subscriptions
+    "subscription_payments",
+    "coupon_redemptions",
     "subscriptions",
-    # Users before tenants
+    # Tenant-scoped
+    "invitations",
+    "budget_categories",
     "users",
-    # Tenants last
     "tenants",
 ]
 
