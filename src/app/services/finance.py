@@ -18,6 +18,8 @@ from ..schemas.finance import (
     BudgetStatusInfo,
     CategorySummary,
     ExpenseResponse,
+    MonthlyByCategoryResponse,
+    MonthlyCategoryPoint,
     ReportSummary,
     TrendDataPoint,
 )
@@ -377,6 +379,47 @@ async def get_full_report(
         by_category=by_category,
         daily_trend=daily_trend,
     )
+
+
+def _first_day_n_months_ago(months: int) -> date:
+    """First day of the month N months ago (from today)."""
+    today = date.today()
+    year = today.year
+    month = today.month - months
+    while month < 1:
+        month += 12
+        year -= 1
+    return date(year, month, 1)
+
+
+async def get_monthly_by_category(
+    tenant_id: UUID,
+    months: int = 6,
+) -> MonthlyByCategoryResponse:
+    """Get spending by month and category for the last N months (for charts)."""
+    end_date = date.today()
+    start_date = _first_day_n_months_ago(months)
+
+    rows = await repo.get_monthly_spending_by_category_range(
+        tenant_id, start_date, end_date
+    )
+
+    months_set: set[str] = set()
+    data: list[MonthlyCategoryPoint] = []
+    for r in rows:
+        month_key = str(r["month"])
+        months_set.add(month_key)
+        data.append(
+            MonthlyCategoryPoint(
+                month=month_key,
+                category_id=r.get("category_id"),
+                category_name=str(r.get("category_name", "Sin categoría")),
+                total=Decimal(str(r.get("total", 0))),
+            )
+        )
+
+    months_list = sorted(months_set)
+    return MonthlyByCategoryResponse(months=months_list, data=data)
 
 
 async def get_budgets_with_spending(tenant_id: UUID) -> list[BudgetCategoryResponse]:

@@ -297,6 +297,14 @@ async def create_budget_category(
         return dict(row)
 
 
+def _map_budget_update_keys(updates: dict[str, Any]) -> dict[str, Any]:
+    """Map API schema keys to DB column names."""
+    mapped = dict(updates)
+    if "alert_threshold" in mapped:
+        mapped["alert_threshold_percent"] = mapped.pop("alert_threshold")
+    return mapped
+
+
 async def update_budget_category(
     tenant_id: UUID,
     category_id: UUID,
@@ -304,11 +312,12 @@ async def update_budget_category(
 ) -> dict[str, Any] | None:
     """Update a budget category."""
     pool = await get_pool()
-    
+    updates = _map_budget_update_keys(updates)
+
     set_parts = []
     params = []
     param_idx = 1
-    
+
     for key, value in updates.items():
         if value is not None:
             set_parts.append(f"{key} = ${param_idx}")
@@ -456,5 +465,36 @@ async def get_monthly_spending_by_category(
             ORDER BY bc.name
             """,
             tenant_id, year, month
+        )
+        return [dict(row) for row in rows]
+
+
+async def get_monthly_spending_by_category_range(
+    tenant_id: UUID,
+    start_date: date,
+    end_date: date,
+) -> list[dict[str, Any]]:
+    """Get spending aggregated by (year, month) and category for chart data."""
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                TO_CHAR(e.expense_date, 'YYYY-MM') as month,
+                e.category_id as category_id,
+                COALESCE(bc.name, 'Sin categoría') as category_name,
+                SUM(e.amount) as total
+            FROM expenses e
+            LEFT JOIN budget_categories bc ON e.category_id = bc.id
+            WHERE e.tenant_id = $1
+              AND e.expense_date >= $2
+              AND e.expense_date <= $3
+            GROUP BY TO_CHAR(e.expense_date, 'YYYY-MM'), e.category_id, bc.name
+            ORDER BY month, category_name
+            """,
+            tenant_id,
+            start_date,
+            end_date,
         )
         return [dict(row) for row in rows]

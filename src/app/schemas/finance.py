@@ -130,6 +130,24 @@ class TrendReport(BaseSchema):
     data: list[TrendDataPoint]
 
 
+class MonthlyCategoryPoint(BaseSchema):
+    """Single data point for monthly-by-category charts (month + category + total)."""
+
+    month: str = Field(..., description="Month as YYYY-MM")
+    category_id: UUID | None
+    category_name: str = Field(..., description="Category name (or 'Sin categoría')")
+    total: Decimal = Field(default=Decimal("0"))
+
+
+class MonthlyByCategoryResponse(BaseSchema):
+    """Response for GET /reports/monthly-by-category: evolution by month and category."""
+
+    months: list[str] = Field(..., description="Ordered list of month keys (YYYY-MM)")
+    data: list[MonthlyCategoryPoint] = Field(
+        ..., description="One row per (month, category) with total spent"
+    )
+
+
 # =============================================================================
 # BUDGET ALERT SCHEMAS
 # =============================================================================

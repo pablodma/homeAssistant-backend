@@ -30,6 +30,7 @@ from ..schemas.finance import (
     ExpenseCreate,
     ExpenseResponse,
     ExpenseUpdate,
+    MonthlyByCategoryResponse,
     ReportSummary,
 )
 from ..services import finance as finance_service
@@ -402,3 +403,14 @@ async def get_report_summary(
 ) -> ReportSummary:
     """Get detailed expense report for dashboard."""
     return await finance_service.get_full_report(tenant_id, start_date, end_date)
+
+
+@router.get("/reports/monthly-by-category", response_model=MonthlyByCategoryResponse)
+async def get_monthly_by_category(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    months: int = Query(6, ge=1, le=24, description="Number of months to include"),
+) -> MonthlyByCategoryResponse:
+    """Get spending by month and category for charts (evolution over time)."""
+    return await finance_service.get_monthly_by_category(tenant_id, months=months)
