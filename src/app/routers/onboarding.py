@@ -48,27 +48,16 @@ async def get_onboarding_status(
     
     Returns tenant info if onboarding is complete.
     """
-    # #region agent log
-    import os
-    _log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "debug-433837.log"))
-    try:
-        with open(_log_path, "a", encoding="utf-8") as _f:
-            _f.write('{"id":"onb-status-entry","timestamp":' + str(int(__import__("time").time() * 1000)) + ',"location":"onboarding.py:get_onboarding_status","message":"GET onboarding/status","data":{"user_id":"' + str(current_user.id) + '"},"hypothesisId":"H1"}\n')
-    except Exception:
-        pass
+    # #region agent log (Railway logs)
+    import logging
+    _log = logging.getLogger("onboarding")
+    _log.info("[DEBUG-433837] GET onboarding/status user_id=%s hypothesisId=H1", current_user.id)
     # #endregion
     repo = get_onboarding_repository()
     tenant_info = await repo.get_user_tenant(current_user.id)
-
-    # #region agent log
-    try:
-        _t = tenant_info or {}
-        _oc = _t.get("onboarding_completed", False)
-        _tid = _t.get("tenant_id")
-        with open(_log_path, "a", encoding="utf-8") as _f:
-            _f.write('{"id":"onb-status-tenant","timestamp":' + str(int(__import__("time").time() * 1000)) + ',"location":"onboarding.py:get_onboarding_status","message":"tenant_info","data":{"has_tenant":' + str(tenant_info is not None).lower() + ',"onboarding_completed":' + str(_oc).lower() + ',"tenant_id":' + ('"' + str(_tid) + '"' if _tid else 'null') + '},"hypothesisId":"H1"}\n')
-    except Exception:
-        pass
+    # #region agent log (Railway logs)
+    _t = tenant_info or {}
+    _log.info("[DEBUG-433837] onboarding/status tenant_info has_tenant=%s onboarding_completed=%s tenant_id=%s hypothesisId=H1", tenant_info is not None, _t.get("onboarding_completed", False), _t.get("tenant_id"))
     # #endregion
 
     if not tenant_info:

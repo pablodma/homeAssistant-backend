@@ -62,14 +62,9 @@ async def google_token_auth(request: GoogleIdTokenRequest) -> AuthResponse:
     
     # Find or create user (creates new tenant for new users)
     auth_result = await find_or_create_oauth_user(google_user)
-    # #region agent log
-    import os
-    _log_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "debug-433837.log"))
-    try:
-        with open(_log_path, "a", encoding="utf-8") as _f:
-            _f.write('{"id":"auth-google-result","timestamp":' + str(int(__import__("time").time() * 1000)) + ',"location":"auth.py:google_token_auth","message":"auth_result after find_or_create","data":{"onboarding_completed":' + str(auth_result.onboarding_completed).lower() + ',"is_new_user":' + str(auth_result.is_new_user).lower() + '},"hypothesisId":"H2"}\n')
-    except Exception:
-        pass
+    # #region agent log (Railway logs)
+    import logging
+    logging.getLogger("auth").info("[DEBUG-433837] auth google_token_auth onboarding_completed=%s is_new_user=%s hypothesisId=H2", auth_result.onboarding_completed, auth_result.is_new_user)
     # #endregion
 
     # Create JWT token with onboarding status
