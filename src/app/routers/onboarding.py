@@ -159,15 +159,54 @@ async def complete_onboarding(
                 detail="Invalid or expired onboarding token",
             )
 
-    # Check if any phone is already registered
+    # Check if any phone is already registered to another user (allow if it's the current user's own phone)
     for member in request.members:
         if await repo.check_phone_exists(member.phone):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Phone {member.phone} is already registered to another household",
-            )
+            owner_of_phone = await repo.get_user_id_for_phone(member.phone)
+            if owner_of_phone is None or owner_of_phone != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Phone {member.phone} is already registered to another household",
+                )
 
-    # Create the tenant
+    existing_tenant = await repo.get_user_tenant(current_user.id)
+    if existing_tenant and existing_tenant.get("tenant_id"):
+        # User already has a tenant (e.g. created by WhatsApp or previous signup): complete it instead of creating a new one
+        tenant_id = UUID(str(existing_tenant["tenant_id"]))
+        await repo.update_tenant_onboarding_completion(
+            tenant_id=tenant_id,
+            home_name=request.home_name,
+            plan=request.plan,
+            timezone=request.timezone,
+            language=request.language,
+            currency=request.currency,
+        )
+        for i, member in enumerate(request.members):
+            is_owner_member = (i == 0 and member.role == "admin")
+            if is_owner_member:
+                owner_phone = token_phone if token_phone else member.phone
+                if owner_phone:
+                    await repo.update_user_phone(current_user.id, owner_phone)
+            else:
+                # Only add member if phone is not already the owner's (avoid duplicate)
+                if await repo.check_phone_exists(member.phone) and await repo.get_user_id_for_phone(member.phone) == current_user.id:
+                    continue
+                await repo.create_member(
+                    tenant_id=tenant_id,
+                    phone=member.phone,
+                    display_name=member.name,
+                    role=member.role,
+                    email=member.email,
+                )
+        await repo.create_default_budget_categories(tenant_id)
+        return OnboardingResponse(
+            tenant_id=tenant_id,
+            home_name=request.home_name,
+            plan=request.plan,
+            members_count=len(request.members),
+        )
+
+    # Create a new tenant (first-time onboarding)
     tenant_id = await repo.create_tenant(
         home_name=request.home_name,
         plan=request.plan,
@@ -177,19 +216,14 @@ async def complete_onboarding(
         currency=request.currency,
     )
 
-    # Update owner's tenant and phone
     await repo.update_user_tenant(current_user.id, tenant_id)
 
-    # Process members
     for i, member in enumerate(request.members):
         is_owner_member = (i == 0 and member.role == "admin")
-
         if is_owner_member:
-            # First admin = the owner. Use token phone if from WhatsApp link, else form member.
             owner_phone = token_phone if token_phone else member.phone
             await repo.update_user_phone(current_user.id, owner_phone)
         else:
-            # Additional members: create new user records
             await repo.create_member(
                 tenant_id=tenant_id,
                 phone=member.phone,
@@ -197,10 +231,8 @@ async def complete_onboarding(
                 role=member.role,
                 email=member.email,
             )
-    
-    # Create default budget categories
+
     await repo.create_default_budget_categories(tenant_id)
-    
     return OnboardingResponse(
         tenant_id=tenant_id,
         home_name=request.home_name,

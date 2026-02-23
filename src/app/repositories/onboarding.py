@@ -83,6 +83,32 @@ class OnboardingRepository:
             user_id,
         )
 
+    async def update_tenant_onboarding_completion(
+        self,
+        tenant_id: UUID,
+        home_name: str,
+        plan: str,
+        timezone: str = "America/Argentina/Buenos_Aires",
+        language: str = "es-AR",
+        currency: str = "ARS",
+    ) -> None:
+        """Set tenant home_name, plan, and mark onboarding_completed=true."""
+        pool = await get_pool()
+        await pool.execute(
+            """
+            UPDATE tenants
+            SET name = $1, home_name = $1, plan = $2, onboarding_completed = true,
+                timezone = $3, language = $4, currency = $5, updated_at = NOW()
+            WHERE id = $6
+            """,
+            home_name,
+            plan,
+            timezone,
+            language,
+            currency,
+            tenant_id,
+        )
+
     async def create_member(
         self,
         tenant_id: UUID,
@@ -268,6 +294,23 @@ class OnboardingRepository:
         )
         
         return bool(exists)
+
+    async def get_user_id_for_phone(self, phone: str) -> UUID | None:
+        """Return the user id that has this phone, or None if not registered.
+        For Argentina numbers, checks both +549XX and +54XX formats.
+        """
+        pool = await get_pool()
+        normalized_phone = self._normalize_phone(phone)
+        phone_variants = [normalized_phone]
+        if normalized_phone.startswith("+549"):
+            phone_variants.append(f"+54{normalized_phone[4:]}")
+        elif normalized_phone.startswith("+54") and not normalized_phone.startswith("+549"):
+            phone_variants.append(f"+549{normalized_phone[3:]}")
+        row = await pool.fetchrow(
+            "SELECT id FROM users WHERE phone = ANY($1) AND is_active = true LIMIT 1",
+            phone_variants,
+        )
+        return UUID(str(row["id"])) if row else None
 
     async def create_default_budget_categories(self, tenant_id: UUID) -> None:
         """Create default budget categories for a new tenant."""
