@@ -48,17 +48,8 @@ async def get_onboarding_status(
     
     Returns tenant info if onboarding is complete.
     """
-    # #region agent log (Railway logs)
-    import logging
-    _log = logging.getLogger("onboarding")
-    _log.info("[DEBUG-433837] GET onboarding/status user_id=%s hypothesisId=H1", current_user.id)
-    # #endregion
     repo = get_onboarding_repository()
     tenant_info = await repo.get_user_tenant(current_user.id)
-    # #region agent log (Railway logs)
-    _t = tenant_info or {}
-    _log.info("[DEBUG-433837] onboarding/status tenant_info has_tenant=%s onboarding_completed=%s tenant_id=%s hypothesisId=H1", tenant_info is not None, _t.get("onboarding_completed", False), _t.get("tenant_id"))
-    # #endregion
 
     if not tenant_info:
         return OnboardingStatusResponse(

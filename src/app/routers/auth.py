@@ -62,10 +62,6 @@ async def google_token_auth(request: GoogleIdTokenRequest) -> AuthResponse:
     
     # Find or create user (creates new tenant for new users)
     auth_result = await find_or_create_oauth_user(google_user)
-    # #region agent log (Railway logs)
-    import logging
-    logging.getLogger("auth").info("[DEBUG-433837] auth google_token_auth onboarding_completed=%s is_new_user=%s hypothesisId=H2", auth_result.onboarding_completed, auth_result.is_new_user)
-    # #endregion
 
     # Create JWT token with onboarding status
     access_token = create_access_token(

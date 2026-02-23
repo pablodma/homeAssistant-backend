@@ -47,8 +47,8 @@ async def get_expenses(
     pool = await get_pool()
     
     query = """
-        SELECT e.id, e.tenant_id, e.amount, e.category_id, e.description, 
-               e.expense_date, e.created_at, e.updated_at,
+        SELECT e.id, e.tenant_id, e.amount, e.category_id, e.description,
+               e.expense_date, e.created_at,
                bc.name as category_name
         FROM expenses e
         LEFT JOIN budget_categories bc ON e.category_id = bc.id
