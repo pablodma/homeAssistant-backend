@@ -52,6 +52,38 @@ class ExpenseResponse(ExpenseBase, TimestampMixin):
 
 
 # =============================================================================
+# INCOME SCHEMAS
+# =============================================================================
+
+class IncomeBase(BaseSchema):
+    """Base income schema."""
+    amount: Decimal = Field(..., gt=0, description="Income amount")
+    description: str | None = Field(None, max_length=500)
+    income_date: date = Field(default_factory=date.today)
+
+
+class IncomeCreate(BaseSchema):
+    """Schema for creating an income."""
+    amount: Decimal = Field(..., gt=0)
+    description: str | None = None
+    income_date: date | None = None
+    idempotency_key: str | None = None
+
+
+class IncomeUpdate(BaseSchema):
+    """Schema for updating an income."""
+    amount: Decimal | None = Field(None, gt=0)
+    description: str | None = None
+    income_date: date | None = None
+
+
+class IncomeResponse(IncomeBase, TimestampMixin):
+    """Income response schema."""
+    id: UUID
+    tenant_id: UUID
+
+
+# =============================================================================
 # BUDGET CATEGORY SCHEMAS
 # =============================================================================
 
@@ -86,6 +118,40 @@ class BudgetCategoryResponse(BudgetCategoryBase):
     percentage_used: float = 0.0
     created_at: datetime | None = None
     updated_at: datetime | None = None
+
+
+class BudgetGroupUpdate(BaseSchema):
+    """Schema for updating a budget group's monthly limit."""
+    monthly_limit: Decimal | None = Field(None, ge=0)
+
+
+class SubcategorySpending(BaseSchema):
+    """Spending info for a single subcategory within an overview."""
+    id: UUID
+    name: str
+    total_spent: Decimal = Decimal("0")
+    count: int = 0
+
+
+class BudgetGroupOverview(BaseSchema):
+    """A budget group with aggregated spending and subcategories."""
+    id: UUID
+    name: str
+    monthly_limit: Decimal | None = None
+    total_spent: Decimal = Decimal("0")
+    remaining: Decimal | None = None
+    percentage_used: float = 0.0
+    subcategories: list[SubcategorySpending] = []
+
+
+class FinanceOverviewResponse(BaseSchema):
+    """Response for the monthly finance overview endpoint."""
+    month: str = Field(..., description="YYYY-MM")
+    total_income: Decimal = Decimal("0")
+    total_expense: Decimal = Decimal("0")
+    balance: Decimal = Decimal("0")
+    comparison_previous_month: float | None = None
+    groups: list[BudgetGroupOverview] = []
 
 
 # =============================================================================
@@ -309,3 +375,10 @@ class AgentListCategoriesResponse(BaseSchema):
     
     categories: list[AgentCategoryItem]
     count: int
+
+
+class AgentLogIncomeResponse(BaseSchema):
+    """Response to agent after logging income."""
+    success: bool
+    income_id: UUID
+    message: str

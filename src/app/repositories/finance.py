@@ -498,3 +498,206 @@ async def get_monthly_spending_by_category_range(
             end_date,
         )
         return [dict(row) for row in rows]
+
+
+# =============================================================================
+# INCOME CRUD
+# =============================================================================
+
+async def create_income(
+    tenant_id: UUID,
+    amount: Decimal,
+    description: str | None = None,
+    income_date: date | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Create a new income."""
+    pool = await get_pool()
+    if income_date is None:
+        income_date = date.today()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO incomes (tenant_id, amount, description, income_date, idempotency_key)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id, tenant_id, amount, description, income_date, idempotency_key, created_at
+            """,
+            tenant_id, amount, description, income_date, idempotency_key,
+        )
+        return dict(row)
+
+
+async def get_incomes(
+    tenant_id: UUID,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """Get incomes for a tenant with optional date filters."""
+    pool = await get_pool()
+    query = "SELECT * FROM incomes WHERE tenant_id = $1"
+    params: list[Any] = [tenant_id]
+    idx = 2
+    if start_date:
+        query += f" AND income_date >= ${idx}"
+        params.append(start_date)
+        idx += 1
+    if end_date:
+        query += f" AND income_date <= ${idx}"
+        params.append(end_date)
+        idx += 1
+    query += f" ORDER BY income_date DESC, created_at DESC LIMIT ${idx} OFFSET ${idx + 1}"
+    params.extend([limit, offset])
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(query, *params)
+        return [dict(r) for r in rows]
+
+
+async def get_income_by_id(tenant_id: UUID, income_id: UUID) -> dict[str, Any] | None:
+    """Get a single income by ID."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM incomes WHERE id = $1 AND tenant_id = $2",
+            income_id, tenant_id,
+        )
+        return dict(row) if row else None
+
+
+async def update_income(
+    tenant_id: UUID,
+    income_id: UUID,
+    **updates: Any,
+) -> dict[str, Any] | None:
+    """Update an income."""
+    pool = await get_pool()
+    set_parts = []
+    params = []
+    idx = 1
+    for key, value in updates.items():
+        if value is not None:
+            set_parts.append(f"{key} = ${idx}")
+            params.append(value)
+            idx += 1
+    if not set_parts:
+        return await get_income_by_id(tenant_id, income_id)
+    params.extend([income_id, tenant_id])
+    query = f"""
+        UPDATE incomes SET {', '.join(set_parts)}
+        WHERE id = ${idx} AND tenant_id = ${idx + 1}
+        RETURNING *
+    """
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(query, *params)
+        return dict(row) if row else None
+
+
+async def delete_income(tenant_id: UUID, income_id: UUID) -> bool:
+    """Delete an income."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM incomes WHERE id = $1 AND tenant_id = $2",
+            income_id, tenant_id,
+        )
+        return result == "DELETE 1"
+
+
+async def get_incomes_summary(
+    tenant_id: UUID,
+    start_date: date,
+    end_date: date,
+) -> dict[str, Any]:
+    """Get income summary (total + count) for a period."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count
+            FROM incomes
+            WHERE tenant_id = $1 AND income_date >= $2 AND income_date <= $3
+            """,
+            tenant_id, start_date, end_date,
+        )
+        return {"total": row["total"], "count": row["count"]}
+
+
+# =============================================================================
+# HIERARCHICAL CATEGORIES
+# =============================================================================
+
+async def get_all_budget_categories(tenant_id: UUID) -> list[dict[str, Any]]:
+    """Get all budget categories (flat list, including groups and subs)."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, tenant_id, name, monthly_limit, alert_threshold_percent as alert_threshold,
+                   parent_id, sort_order, is_system, created_at
+            FROM budget_categories
+            WHERE tenant_id = $1
+            ORDER BY sort_order, name
+            """,
+            tenant_id,
+        )
+        return [dict(r) for r in rows]
+
+
+async def get_hierarchical_categories_with_spending(
+    tenant_id: UUID, year: int, month: int
+) -> list[dict[str, Any]]:
+    """Get groups with subcategories and current month spending.
+
+    Returns groups (parent_id IS NULL) each with a 'subcategories' list.
+    Spending is aggregated per subcategory for the given month.
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT
+                g.id   AS group_id,
+                g.name AS group_name,
+                g.monthly_limit AS group_limit,
+                g.sort_order AS group_sort,
+                s.id   AS sub_id,
+                s.name AS sub_name,
+                s.sort_order AS sub_sort,
+                COALESCE(SUM(e.amount), 0) AS sub_spent,
+                COUNT(e.id) AS sub_count
+            FROM budget_categories g
+            LEFT JOIN budget_categories s ON s.parent_id = g.id AND s.tenant_id = $1
+            LEFT JOIN expenses e
+                ON e.category_id = s.id
+               AND e.tenant_id = $1
+               AND EXTRACT(YEAR FROM e.expense_date) = $2
+               AND EXTRACT(MONTH FROM e.expense_date) = $3
+            WHERE g.tenant_id = $1 AND g.parent_id IS NULL
+            GROUP BY g.id, g.name, g.monthly_limit, g.sort_order,
+                     s.id, s.name, s.sort_order
+            ORDER BY g.sort_order, s.sort_order
+            """,
+            tenant_id, year, month,
+        )
+        # Assemble into groups
+        groups: dict[str, dict] = {}
+        for r in rows:
+            gid = str(r["group_id"])
+            if gid not in groups:
+                groups[gid] = {
+                    "id": r["group_id"],
+                    "name": r["group_name"],
+                    "monthly_limit": r["group_limit"],
+                    "sort_order": r["group_sort"],
+                    "subcategories": [],
+                }
+            if r["sub_id"] is not None:
+                groups[gid]["subcategories"].append({
+                    "id": r["sub_id"],
+                    "name": r["sub_name"],
+                    "sort_order": r["sub_sort"],
+                    "total_spent": r["sub_spent"],
+                    "count": r["sub_count"],
+                })
+        return list(groups.values())

@@ -92,12 +92,22 @@ async def google_token_auth(request: GoogleIdTokenRequest) -> AuthResponse:
 async def get_me(
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> UserResponse:
-    """Get current authenticated user."""
+    """Get current authenticated user with real DB data."""
+    from ..config.database import get_pool
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, tenant_id, email, display_name, phone, role, created_at, updated_at FROM users WHERE id = $1",
+            current_user.id,
+        )
+    if row:
+        return UserResponse(**dict(row))
     return UserResponse(
         id=current_user.id,
         tenant_id=current_user.tenant_id,
         email=current_user.email,
-        display_name=None,  # Would fetch from DB in full implementation
+        display_name=None,
         phone=None,
         role=current_user.role,
         created_at=None,

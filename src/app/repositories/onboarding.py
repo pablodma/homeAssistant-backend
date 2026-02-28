@@ -313,29 +313,46 @@ class OnboardingRepository:
         return UUID(str(row["id"])) if row else None
 
     async def create_default_budget_categories(self, tenant_id: UUID) -> None:
-        """Create default budget categories for a new tenant."""
+        """Seed fixed hierarchical taxonomy for a new tenant."""
         pool = await get_pool()
-        
-        # Categorías base con presupuesto $0 (sin límite inicial)
-        # El usuario puede configurar límites después
-        categories = [
-            ("Supermercado", 0, 80),
-            ("Transporte", 0, 80),
-            ("Servicios", 0, 80),
-            ("Entretenimiento", 0, 80),
-            ("Salud", 0, 80),
-            ("Educación", 0, 80),
-            ("Otros", 0, 80),
+
+        taxonomy: list[tuple[str, int, list[str]]] = [
+            ("Alimentación", 1, ["Restaurantes y delivery", "Supermercado", "Otros (Alimentación)"]),
+            ("Bienestar", 2, ["Cuidado Personal", "Deporte", "Educación", "Salud", "Otros (Bienestar)"]),
+            ("Compras", 3, ["Electrónicos", "Hogar", "Mascotas", "Medicina", "Niños", "Suscripciones", "Vestimenta", "Otros (Compras)"]),
+            ("Movilidad", 4, ["Apps de viajes", "Combustible", "Patente y seguro", "Transporte Público", "Otros (Movilidad)"]),
+            ("Obligaciones", 5, ["Gastos laborales", "Servicios profesionales", "Trámites e impuestos", "Otros (Obligaciones)"]),
+            ("Recreación", 6, ["Eventos", "Hobbies", "Vacaciones", "Otros (Recreación)"]),
+            ("Vivienda", 7, ["Alquiler", "Conectividad", "Servicios", "Otros (Vivienda)"]),
         ]
-        
-        query = """
-            INSERT INTO budget_categories (tenant_id, name, monthly_limit, alert_threshold_percent)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT DO NOTHING
+
+        group_q = """
+            INSERT INTO budget_categories (tenant_id, name, parent_id, sort_order, is_system, monthly_limit)
+            VALUES ($1, $2, NULL, $3, true, 0)
+            ON CONFLICT (tenant_id, parent_id, name) DO NOTHING
+            RETURNING id
         """
-        
-        for name, limit, threshold in categories:
-            await pool.execute(query, tenant_id, name, limit, threshold)
+        sub_q = """
+            INSERT INTO budget_categories (tenant_id, name, parent_id, sort_order, is_system)
+            VALUES ($1, $2, $3, $4, true)
+            ON CONFLICT (tenant_id, parent_id, name) DO NOTHING
+        """
+
+        async with pool.acquire() as conn:
+            for group_name, group_sort, subs in taxonomy:
+                row = await conn.fetchrow(group_q, tenant_id, group_name, group_sort)
+                if row:
+                    gid = row["id"]
+                else:
+                    r = await conn.fetchrow(
+                        "SELECT id FROM budget_categories WHERE tenant_id=$1 AND name=$2 AND parent_id IS NULL",
+                        tenant_id, group_name,
+                    )
+                    gid = r["id"] if r else None
+                if gid is None:
+                    continue
+                for idx, sub_name in enumerate(subs, start=1):
+                    await conn.execute(sub_q, tenant_id, sub_name, gid, idx)
 
 
 # Singleton instance

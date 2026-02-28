@@ -37,6 +37,22 @@ class TenantResponse(BaseSchema, TimestampMixin):
     settings: dict
 
 
+class TenantDetailResponse(BaseSchema, TimestampMixin):
+    """Extended tenant detail for Mi Cuenta page."""
+
+    id: UUID
+    name: str
+    home_name: str | None = None
+    plan: str = "starter"
+    active: bool = True
+    timezone: str = "America/Argentina/Buenos_Aires"
+    language: str = "es"
+    currency: str = "ARS"
+    settings: dict = {}
+    owner_email: str | None = None
+    owner_name: str | None = None
+
+
 class TenantWithInvitation(TenantResponse):
     """Tenant response with invitation code."""
 

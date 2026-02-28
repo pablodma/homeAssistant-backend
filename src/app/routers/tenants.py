@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ..config.database import get_pool
 from ..middleware.auth import (
     CurrentUser,
     check_tenant_access,
@@ -14,6 +15,7 @@ from ..middleware.auth import (
 from ..schemas.tenant import (
     InvitationResponse,
     TenantCreate,
+    TenantDetailResponse,
     TenantResponse,
     TenantUpdate,
     TenantWithInvitation,
@@ -27,28 +29,48 @@ async def create_tenant(
     request: TenantCreate,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> TenantWithInvitation:
-    """
-    Create a new tenant.
-    
-    The authenticated user becomes the owner of the new tenant.
-    """
-    # TODO: Implement tenant creation
-    # 1. Create tenant in database
-    # 2. Create user as owner of tenant
-    # 3. Generate invitation code
+    """Create a new tenant."""
     raise NotImplementedError("Tenant creation not yet implemented")
 
 
-@router.get("/{tenant_id}", response_model=TenantResponse)
+@router.get("/{tenant_id}", response_model=TenantDetailResponse)
 async def get_tenant(
     tenant_id: UUID,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
-) -> TenantResponse:
+) -> TenantDetailResponse:
     """Get tenant details."""
     check_tenant_access(current_user, tenant_id)
-    
-    # TODO: Fetch tenant from database
-    raise NotImplementedError("Get tenant not yet implemented")
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT t.id, t.name, t.home_name, t.plan, t.active,
+                   t.timezone, t.language, t.currency, t.settings,
+                   t.created_at, t.updated_at,
+                   u.email AS owner_email, u.display_name AS owner_name
+            FROM tenants t
+            LEFT JOIN users u ON u.id = t.owner_user_id
+            WHERE t.id = $1
+            """,
+            tenant_id,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return TenantDetailResponse(
+        id=row["id"],
+        name=row["name"] or "",
+        home_name=row["home_name"],
+        plan=row["plan"] or "starter",
+        active=row["active"],
+        timezone=row["timezone"] or "America/Argentina/Buenos_Aires",
+        language=row["language"] or "es",
+        currency=row["currency"] or "ARS",
+        settings=row["settings"] or {},
+        owner_email=row["owner_email"],
+        owner_name=row["owner_name"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
 
 
 @router.put("/{tenant_id}/settings", response_model=TenantResponse)
@@ -59,8 +81,6 @@ async def update_tenant_settings(
 ) -> TenantResponse:
     """Update tenant settings. Requires admin or owner role."""
     check_tenant_access(current_user, tenant_id)
-    
-    # TODO: Update tenant in database
     raise NotImplementedError("Update tenant not yet implemented")
 
 
@@ -75,6 +95,4 @@ async def create_invitation(
 ) -> InvitationResponse:
     """Create invitation code. Requires admin or owner role."""
     check_tenant_access(current_user, tenant_id)
-    
-    # TODO: Create invitation in database
     raise NotImplementedError("Create invitation not yet implemented")

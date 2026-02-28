@@ -13,14 +13,19 @@ from ..schemas.finance import (
     AgentGetReportResponse,
     AgentListCategoriesResponse,
     AgentLogExpenseResponse,
+    AgentLogIncomeResponse,
     BudgetAlert,
     BudgetCategoryResponse,
+    BudgetGroupOverview,
     BudgetStatusInfo,
     CategorySummary,
     ExpenseResponse,
+    FinanceOverviewResponse,
+    IncomeResponse,
     MonthlyByCategoryResponse,
     MonthlyCategoryPoint,
     ReportSummary,
+    SubcategorySpending,
     TrendDataPoint,
 )
 
@@ -55,23 +60,24 @@ def _get_alert_level(percentage: float, threshold: int) -> Literal["ok", "warnin
     return "ok"
 
 
-async def resolve_category(tenant_id: UUID, category_name: str) -> UUID:
-    """Resolve category name to ID, creating if necessary."""
-    # Try to find existing category
+async def resolve_category(tenant_id: UUID, category_name: str) -> UUID | None:
+    """Resolve category name to a subcategory ID using fuzzy matching.
+
+    With the fixed taxonomy, categories are never created dynamically.
+    Returns the matching subcategory ID, or None if no match is found.
+    """
     category = await repo.get_budget_category_by_name(tenant_id, category_name)
-    
     if category:
         return category["id"]
-    
-    # Create new category with no limit (user can set later)
-    new_category = await repo.create_budget_category(
-        tenant_id=tenant_id,
-        name=category_name.title(),
-        monthly_limit=None,
-        alert_threshold=80,
-    )
-    
-    return new_category["id"]
+
+    all_cats = await repo.get_all_budget_categories(tenant_id)
+    subcats = [c for c in all_cats if c.get("parent_id") is not None]
+    needle = category_name.lower().strip()
+    for sub in subcats:
+        if needle in sub["name"].lower() or sub["name"].lower() in needle:
+            return sub["id"]
+
+    return None
 
 
 async def create_expense_with_alert(
@@ -82,10 +88,8 @@ async def create_expense_with_alert(
     expense_date: date | None = None,
 ) -> AgentLogExpenseResponse:
     """Create expense and check for budget alerts."""
-    # Resolve category
     category_id = await resolve_category(tenant_id, category_name)
-    
-    # Create expense
+
     expense = await repo.create_expense(
         tenant_id=tenant_id,
         amount=amount,
@@ -93,14 +97,13 @@ async def create_expense_with_alert(
         description=description,
         expense_date=expense_date or date.today(),
     )
-    
-    # Check budget alert
-    alert = await check_category_alert(tenant_id, category_id)
-    
-    # Get budget status info (always, if category has limit)
-    budget_status = await get_budget_status_for_category(tenant_id, category_id, category_name)
-    
-    # Build response message
+
+    alert = None
+    budget_status = None
+    if category_id:
+        alert = await check_category_alert(tenant_id, category_id)
+        budget_status = await get_budget_status_for_category(tenant_id, category_id, category_name)
+
     if alert:
         if alert.alert_level == "exceeded":
             message = f"⚠️ Gasto registrado. ¡PRESUPUESTO EXCEDIDO en {category_name}! ({alert.percentage_used:.0f}%)"
@@ -110,7 +113,7 @@ async def create_expense_with_alert(
             message = f"✅ Gasto registrado. Atención: {category_name} al {alert.percentage_used:.0f}%"
     else:
         message = f"✅ Gasto de ${amount:,.0f} registrado en {category_name}"
-    
+
     return AgentLogExpenseResponse(
         success=True,
         expense_id=expense["id"],
@@ -724,3 +727,99 @@ async def delete_expenses_bulk_for_agent(
         "message": "❌ No se encontraron gastos que coincidan con los criterios.",
         "deleted_count": 0,
     }
+
+
+# =============================================================================
+# FINANCE OVERVIEW
+# =============================================================================
+
+async def get_finance_overview(
+    tenant_id: UUID,
+    year: int,
+    month: int,
+) -> FinanceOverviewResponse:
+    """Build the monthly finance overview (income, expense, balance, groups)."""
+    import calendar
+    first_day = date(year, month, 1)
+    last_day = date(year, month, calendar.monthrange(year, month)[1])
+
+    expense_summary = await repo.get_expenses_summary(tenant_id, first_day, last_day)
+    income_summary = await repo.get_incomes_summary(tenant_id, first_day, last_day)
+    hierarchy = await repo.get_hierarchical_categories_with_spending(tenant_id, year, month)
+
+    total_expense = Decimal(str(expense_summary["total"]))
+    total_income = Decimal(str(income_summary["total"]))
+    balance = total_income - total_expense
+
+    # Comparison with previous month
+    prev_month = month - 1
+    prev_year = year
+    if prev_month < 1:
+        prev_month = 12
+        prev_year -= 1
+    prev_first = date(prev_year, prev_month, 1)
+    prev_last = date(prev_year, prev_month, calendar.monthrange(prev_year, prev_month)[1])
+    prev_summary = await repo.get_expenses_summary(tenant_id, prev_first, prev_last)
+    prev_total = Decimal(str(prev_summary["total"]))
+    comparison = None
+    if prev_total > 0:
+        comparison = float((total_expense - prev_total) / prev_total)
+
+    groups = []
+    for g in hierarchy:
+        limit = Decimal(str(g["monthly_limit"])) if g.get("monthly_limit") else None
+        spent = sum(Decimal(str(s["total_spent"])) for s in g.get("subcategories", []))
+        remaining = (limit - spent) if limit and limit > 0 else None
+        pct = float(spent / limit * 100) if limit and limit > 0 else 0.0
+
+        subs = [
+            SubcategorySpending(
+                id=s["id"],
+                name=s["name"],
+                total_spent=Decimal(str(s["total_spent"])),
+                count=s["count"],
+            )
+            for s in g.get("subcategories", [])
+        ]
+        groups.append(BudgetGroupOverview(
+            id=g["id"],
+            name=g["name"],
+            monthly_limit=limit,
+            total_spent=spent,
+            remaining=remaining,
+            percentage_used=pct,
+            subcategories=subs,
+        ))
+
+    return FinanceOverviewResponse(
+        month=f"{year}-{month:02d}",
+        total_income=total_income,
+        total_expense=total_expense,
+        balance=balance,
+        comparison_previous_month=comparison,
+        groups=groups,
+    )
+
+
+# =============================================================================
+# AGENT INCOME
+# =============================================================================
+
+async def create_income_for_agent(
+    tenant_id: UUID,
+    amount: Decimal,
+    description: str | None = None,
+    income_date: date | None = None,
+) -> AgentLogIncomeResponse:
+    """Register an income from the WhatsApp agent."""
+    income = await repo.create_income(
+        tenant_id=tenant_id,
+        amount=amount,
+        description=description,
+        income_date=income_date or date.today(),
+    )
+    return AgentLogIncomeResponse(
+        success=True,
+        income_id=income["id"],
+        message=f"✅ Ingreso de ${amount:,.0f} registrado",
+    )

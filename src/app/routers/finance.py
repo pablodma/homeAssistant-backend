@@ -20,6 +20,7 @@ from ..schemas.finance import (
     AgentListCategoriesResponse,
     AgentLogExpenseRequest,
     AgentLogExpenseResponse,
+    AgentLogIncomeResponse,
     AgentModifyExpenseRequest,
     AgentModifyExpenseResponse,
     AgentSetBudgetRequest,
@@ -27,9 +28,14 @@ from ..schemas.finance import (
     BudgetCategoryCreate,
     BudgetCategoryResponse,
     BudgetCategoryUpdate,
+    BudgetGroupUpdate,
     ExpenseCreate,
     ExpenseResponse,
     ExpenseUpdate,
+    FinanceOverviewResponse,
+    IncomeCreate,
+    IncomeResponse,
+    IncomeUpdate,
     MonthlyByCategoryResponse,
     ReportSummary,
 )
@@ -414,3 +420,157 @@ async def get_monthly_by_category(
 ) -> MonthlyByCategoryResponse:
     """Get spending by month and category for charts (evolution over time)."""
     return await finance_service.get_monthly_by_category(tenant_id, months=months)
+
+
+# =============================================================================
+# FINANCE OVERVIEW
+# =============================================================================
+
+@router.get("/finance/overview", response_model=FinanceOverviewResponse)
+async def get_finance_overview(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    month: int = Query(..., ge=1, le=12),
+    year: int = Query(..., ge=2020, le=2100),
+) -> FinanceOverviewResponse:
+    """Get monthly finance overview: income, expenses, balance, hierarchical breakdown."""
+    return await finance_service.get_finance_overview(tenant_id, year, month)
+
+
+# =============================================================================
+# INCOME CRUD ENDPOINTS (for dashboard)
+# =============================================================================
+
+@router.get("/incomes", response_model=list[IncomeResponse])
+async def list_incomes(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+) -> list[IncomeResponse]:
+    """List incomes with optional date filters."""
+    rows = await repo.get_incomes(
+        tenant_id=tenant_id,
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+        offset=offset,
+    )
+    return [IncomeResponse(**r) for r in rows]
+
+
+@router.post("/incomes", response_model=IncomeResponse, status_code=status.HTTP_201_CREATED)
+async def create_income(
+    tenant_id: UUID,
+    income: IncomeCreate,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+) -> IncomeResponse:
+    """Create a new income."""
+    result = await repo.create_income(
+        tenant_id=tenant_id,
+        amount=income.amount,
+        description=income.description,
+        income_date=income.income_date or date.today(),
+        idempotency_key=income.idempotency_key,
+    )
+    return IncomeResponse(**result)
+
+
+@router.get("/incomes/{income_id}", response_model=IncomeResponse)
+async def get_income(
+    tenant_id: UUID,
+    income_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+) -> IncomeResponse:
+    """Get a single income."""
+    income = await repo.get_income_by_id(tenant_id, income_id)
+    if not income:
+        raise HTTPException(status_code=404, detail="Income not found")
+    return IncomeResponse(**income)
+
+
+@router.patch("/incomes/{income_id}", response_model=IncomeResponse)
+async def update_income(
+    tenant_id: UUID,
+    income_id: UUID,
+    income: IncomeUpdate,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+) -> IncomeResponse:
+    """Update an income."""
+    updates = income.model_dump(exclude_unset=True)
+    result = await repo.update_income(tenant_id, income_id, **updates)
+    if not result:
+        raise HTTPException(status_code=404, detail="Income not found")
+    return IncomeResponse(**result)
+
+
+@router.delete("/incomes/{income_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_income(
+    tenant_id: UUID,
+    income_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+) -> None:
+    """Delete an income."""
+    deleted = await repo.delete_income(tenant_id, income_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Income not found")
+
+
+# =============================================================================
+# AGENT INCOME ENDPOINT
+# =============================================================================
+
+@router.post("/agent/income", response_model=AgentLogIncomeResponse)
+async def agent_log_income(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    amount: Decimal = Query(..., description="Income amount"),
+    description: str | None = Query(None, description="Optional description"),
+    income_date: date | None = Query(None, description="Income date YYYY-MM-DD"),
+) -> AgentLogIncomeResponse:
+    """Log an income from the WhatsApp agent."""
+    return await finance_service.create_income_for_agent(
+        tenant_id=tenant_id,
+        amount=amount,
+        description=description,
+        income_date=income_date,
+    )
+
+
+# =============================================================================
+# BUDGET GROUP LIMIT UPDATE
+# =============================================================================
+
+@router.patch("/budgets/{group_id}/limit", response_model=BudgetCategoryResponse)
+async def update_budget_group_limit(
+    tenant_id: UUID,
+    group_id: UUID,
+    body: BudgetGroupUpdate,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+) -> BudgetCategoryResponse:
+    """Update the monthly limit of a budget group (parent_id IS NULL only)."""
+    cat = await repo.get_budget_category_by_id(tenant_id, group_id)
+    if not cat:
+        raise HTTPException(status_code=404, detail="Budget group not found")
+    if cat.get("parent_id") is not None:
+        raise HTTPException(status_code=400, detail="Only groups can have monthly limits")
+    result = await repo.update_budget_category(
+        tenant_id, group_id, monthly_limit=body.monthly_limit
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Budget group not found")
+    budgets = await finance_service.get_budgets_with_spending(tenant_id)
+    updated = next((b for b in budgets if b.id == group_id), None)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Budget group not found")
+    return updated
