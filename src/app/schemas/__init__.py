@@ -1,5 +1,6 @@
 """Pydantic schemas for API request/response validation."""
 
+from . import access as access_schemas
 from . import calendar as calendar_schemas
 from . import coupon as coupon_schemas
 from . import plan_pricing as plan_pricing_schemas
@@ -22,6 +23,7 @@ __all__ = [
     "PaginationParams",
     "TenantMixin",
     "TimestampMixin",
+    "access_schemas",
     "calendar_schemas",
     "coupon_schemas",
     "plan_pricing_schemas",

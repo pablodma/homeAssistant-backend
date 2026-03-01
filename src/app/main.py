@@ -9,7 +9,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .config.database import close_pool, get_pool
 from .middleware.correlation import CorrelationIdMiddleware
-from .routers import admin, auth, calendar, coupons, finance, health, onboarding, plans, subscriptions, tenants
+from .routers import (
+    access,
+    admin,
+    auth,
+    calendar,
+    coupons,
+    finance,
+    health,
+    onboarding,
+    plans,
+    subscriptions,
+    tenants,
+)
 from .routers.calendar import oauth_router
 
 
@@ -65,6 +77,7 @@ def create_app() -> FastAPI:
     # Routers
     app.include_router(health.router)
     app.include_router(auth.router, prefix="/api/v1")
+    app.include_router(access.router, prefix="/api/v1")
     app.include_router(onboarding.router, prefix="/api/v1")
     app.include_router(tenants.router, prefix="/api/v1")
     app.include_router(finance.router, prefix="/api/v1")

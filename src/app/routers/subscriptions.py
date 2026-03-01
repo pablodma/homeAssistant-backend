@@ -87,10 +87,13 @@ async def get_my_subscription(
             detail="User must belong to a tenant",
         )
 
+    tenant = await subscription_repo.get_tenant_by_id(current_user.tenant_id)
+    current_plan = str(tenant["plan"]) if tenant and tenant.get("plan") else "starter"
+
     service = get_subscription_service()
     return await service.get_subscription_status(
         tenant_id=current_user.tenant_id,
-        current_plan=current_user.tenant_plan or "starter",
+        current_plan=current_plan,
     )
 
 
