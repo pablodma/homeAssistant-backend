@@ -306,7 +306,8 @@ class AgentGetBudgetResponse(BaseSchema):
 
 class AgentDeleteExpenseRequest(BaseSchema):
     """Request from n8n agent to delete an expense."""
-    
+
+    expense_id: UUID | None = Field(None, description="Exact expense ID to delete")
     amount: Decimal | None = Field(None, description="Amount to match")
     category: str | None = Field(None, description="Category to match")
     description: str | None = Field(None, description="Description to match (partial)")
@@ -323,7 +324,8 @@ class AgentDeleteExpenseResponse(BaseSchema):
 
 class AgentModifyExpenseRequest(BaseSchema):
     """Request from n8n agent to modify an expense."""
-    
+
+    expense_id: UUID | None = Field(None, description="Exact expense ID to modify")
     # Search criteria
     search_amount: Decimal | None = Field(None, description="Amount to search for")
     search_category: str | None = Field(None, description="Category to search for")
@@ -346,7 +348,8 @@ class AgentModifyExpenseResponse(BaseSchema):
 
 class AgentSetBudgetRequest(BaseSchema):
     """Request from n8n agent to set a budget."""
-    
+
+    category_id: UUID | None = Field(None, description="Optional category ID for deterministic updates")
     category: str = Field(..., description="Category name")
     monthly_limit: Decimal = Field(..., ge=0, description="Monthly budget limit (0 = no limit)")
     alert_threshold: int = Field(default=80, ge=0, le=100, description="Alert threshold percentage")
@@ -363,11 +366,13 @@ class AgentSetBudgetResponse(BaseSchema):
 
 class AgentCategoryItem(BaseSchema):
     """Single category item for agent list."""
-    
+
     id: UUID
     name: str
     monthly_limit: Decimal | None = None
     current_spending: Decimal = Decimal("0")
+    parent_id: UUID | None = None
+    is_system: bool = False
 
 
 class AgentListCategoriesResponse(BaseSchema):
@@ -382,3 +387,69 @@ class AgentLogIncomeResponse(BaseSchema):
     success: bool
     income_id: UUID
     message: str
+
+
+class AgentCreateCategoryRequest(BaseSchema):
+    """Request to create a category for agent flows."""
+
+    name: str = Field(..., min_length=1, max_length=100)
+    monthly_limit: Decimal | None = Field(None, ge=0)
+    alert_threshold: int = Field(default=80, ge=0, le=100)
+    parent_id: UUID | None = None
+
+
+class AgentCreateCategoryResponse(BaseSchema):
+    """Response after creating a category."""
+
+    success: bool
+    message: str
+    category: AgentCategoryItem | None = None
+
+
+class AgentUpdateCategoryRequest(BaseSchema):
+    """Request to update a category by id or name."""
+
+    category_id: UUID | None = None
+    category_name: str | None = Field(None, min_length=1, max_length=100)
+    new_name: str | None = Field(None, min_length=1, max_length=100)
+    monthly_limit: Decimal | None = Field(None, ge=0)
+    alert_threshold: int | None = Field(None, ge=0, le=100)
+
+
+class AgentUpdateCategoryResponse(BaseSchema):
+    """Response after updating a category."""
+
+    success: bool
+    message: str
+    category: AgentCategoryItem | None = None
+
+
+class AgentDeleteCategoryRequest(BaseSchema):
+    """Request to delete a category by id or name."""
+
+    category_id: UUID | None = None
+    category_name: str | None = Field(None, min_length=1, max_length=100)
+
+
+class AgentDeleteCategoryResponse(BaseSchema):
+    """Response after deleting a category."""
+
+    success: bool
+    message: str
+    deleted_category_id: UUID | None = None
+    blocked_has_expenses: bool = False
+
+
+class AgentDeleteBudgetRequest(BaseSchema):
+    """Request to remove monthly limit from a category budget."""
+
+    category_id: UUID | None = None
+    category_name: str | None = Field(None, min_length=1, max_length=100)
+
+
+class AgentDeleteBudgetResponse(BaseSchema):
+    """Response after deleting a budget limit."""
+
+    success: bool
+    message: str
+    category: AgentCategoryItem | None = None

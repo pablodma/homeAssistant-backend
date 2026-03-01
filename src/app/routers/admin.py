@@ -395,7 +395,7 @@ async def apply_quality_issue_fix(
 @router.get("/qa-review/history", response_model=list[QAReviewHistoryItem])
 async def get_qa_review_history(
     limit: int = Query(20, ge=1, le=100),
-    user: CurrentUser = Depends(require_admin),
+    _: CurrentUser = Depends(require_admin),
 ) -> list[QAReviewHistoryItem]:
     """Get history of QA review cycles.
 

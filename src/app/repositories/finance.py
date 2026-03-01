@@ -354,6 +354,22 @@ async def delete_budget_category(tenant_id: UUID, category_id: UUID) -> bool:
         return result == "DELETE 1"
 
 
+async def count_expenses_by_category(tenant_id: UUID, category_id: UUID) -> int:
+    """Count expenses linked to a specific category."""
+    pool = await get_pool()
+
+    async with pool.acquire() as conn:
+        value = await conn.fetchval(
+            """
+            SELECT COUNT(*)
+            FROM expenses
+            WHERE tenant_id = $1 AND category_id = $2
+            """,
+            tenant_id, category_id,
+        )
+        return int(value or 0)
+
+
 # =============================================================================
 # AGGREGATIONS & REPORTS
 # =============================================================================

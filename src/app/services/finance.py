@@ -457,6 +457,7 @@ async def get_budgets_with_spending(tenant_id: UUID) -> list[BudgetCategoryRespo
 
 async def delete_expense_for_agent(
     tenant_id: UUID,
+    expense_id: UUID | None = None,
     amount: Decimal | None = None,
     category_name: str | None = None,
     description: str | None = None,
@@ -465,25 +466,37 @@ async def delete_expense_for_agent(
     """Delete an expense matching the given criteria."""
     from ..schemas.finance import AgentDeleteExpenseResponse
     
-    # Resolve category if provided
-    category_id = None
-    if category_name:
-        cat = await repo.get_budget_category_by_name(tenant_id, category_name)
-        if cat:
-            category_id = cat["id"]
-    
-    # Default to today if no date provided
-    if expense_date is None:
-        expense_date = date.today()
-    
-    # Search for matching expense
-    expense = await repo.search_expense(
-        tenant_id=tenant_id,
-        amount=amount,
-        category_id=category_id,
-        description=description,
-        expense_date=expense_date,
-    )
+    expense: dict | None = None
+
+    # Deterministic path: explicit expense id
+    if expense_id:
+        expense = await repo.get_expense_by_id(tenant_id, expense_id)
+        if not expense:
+            return AgentDeleteExpenseResponse(
+                success=False,
+                message="❌ No se encontró el gasto indicado",
+                deleted_expense=None,
+            ).model_dump()
+    else:
+        # Resolve category if provided
+        category_id = None
+        if category_name:
+            cat = await repo.get_budget_category_by_name(tenant_id, category_name)
+            if cat:
+                category_id = cat["id"]
+
+        # Default to today if no date provided
+        if expense_date is None:
+            expense_date = date.today()
+
+        # Search for matching expense
+        expense = await repo.search_expense(
+            tenant_id=tenant_id,
+            amount=amount,
+            category_id=category_id,
+            description=description,
+            expense_date=expense_date,
+        )
     
     if not expense:
         return AgentDeleteExpenseResponse(
@@ -518,6 +531,7 @@ async def delete_expense_for_agent(
 
 async def modify_expense_for_agent(
     tenant_id: UUID,
+    expense_id: UUID | None = None,
     search_amount: Decimal | None = None,
     search_category: str | None = None,
     search_description: str | None = None,
@@ -529,25 +543,37 @@ async def modify_expense_for_agent(
     """Modify an expense matching the given criteria."""
     from ..schemas.finance import AgentModifyExpenseResponse
     
-    # Resolve search category if provided
-    search_category_id = None
-    if search_category:
-        cat = await repo.get_budget_category_by_name(tenant_id, search_category)
-        if cat:
-            search_category_id = cat["id"]
-    
-    # Default to today if no date provided
-    if search_date is None:
-        search_date = date.today()
-    
-    # Search for matching expense
-    expense = await repo.search_expense(
-        tenant_id=tenant_id,
-        amount=search_amount,
-        category_id=search_category_id,
-        description=search_description,
-        expense_date=search_date,
-    )
+    expense: dict | None = None
+
+    # Deterministic path: explicit expense id
+    if expense_id:
+        expense = await repo.get_expense_by_id(tenant_id, expense_id)
+        if not expense:
+            return AgentModifyExpenseResponse(
+                success=False,
+                message="❌ No se encontró el gasto indicado",
+                modified_expense=None,
+            ).model_dump()
+    else:
+        # Resolve search category if provided
+        search_category_id = None
+        if search_category:
+            cat = await repo.get_budget_category_by_name(tenant_id, search_category)
+            if cat:
+                search_category_id = cat["id"]
+
+        # Default to today if no date provided
+        if search_date is None:
+            search_date = date.today()
+
+        # Search for matching expense
+        expense = await repo.search_expense(
+            tenant_id=tenant_id,
+            amount=search_amount,
+            category_id=search_category_id,
+            description=search_description,
+            expense_date=search_date,
+        )
     
     if not expense:
         return AgentModifyExpenseResponse(
@@ -567,9 +593,15 @@ async def modify_expense_for_agent(
         if new_cat:
             updates["category_id"] = new_cat["id"]
         else:
-            # Create new category
-            new_category_id = await resolve_category(tenant_id, new_category)
-            updates["category_id"] = new_category_id
+            resolved_category_id = await resolve_category(tenant_id, new_category)
+            if resolved_category_id:
+                updates["category_id"] = resolved_category_id
+            else:
+                return AgentModifyExpenseResponse(
+                    success=False,
+                    message="❌ La categoría indicada no existe. Creala primero o elegí una categoría válida.",
+                    modified_expense=None,
+                ).model_dump()
     
     if not updates:
         return AgentModifyExpenseResponse(
@@ -610,14 +642,19 @@ async def set_budget_for_agent(
     category_name: str,
     monthly_limit: Decimal,
     alert_threshold: int = 80,
+    category_id: UUID | None = None,
 ) -> dict:
     """Set or update a budget for a category.
     
     If the category exists, updates the monthly limit.
     If the category doesn't exist, creates it with the specified limit.
     """
-    # Check if category exists
-    category = await repo.get_budget_category_by_name(tenant_id, category_name)
+    # Check if category exists (prefer id for deterministic updates)
+    category = None
+    if category_id:
+        category = await repo.get_budget_category_by_id(tenant_id, category_id)
+    if not category:
+        category = await repo.get_budget_category_by_name(tenant_id, category_name)
     
     if category:
         # Update existing category
@@ -659,6 +696,208 @@ async def set_budget_for_agent(
             },
             "created": True,
         }
+
+
+async def delete_budget_for_agent(
+    tenant_id: UUID,
+    category_id: UUID | None = None,
+    category_name: str | None = None,
+) -> dict:
+    """Delete a budget limit from a category (keeps the category)."""
+    from ..schemas.finance import AgentDeleteBudgetResponse
+
+    category = None
+    if category_id:
+        category = await repo.get_budget_category_by_id(tenant_id, category_id)
+    elif category_name:
+        category = await repo.get_budget_category_by_name(tenant_id, category_name)
+
+    if not category:
+        return AgentDeleteBudgetResponse(
+            success=False,
+            message="❌ No se encontró la categoría para eliminar el presupuesto.",
+            category=None,
+        ).model_dump()
+
+    updated = await repo.update_budget_category(
+        tenant_id=tenant_id,
+        category_id=category["id"],
+        monthly_limit=None,
+    )
+
+    if not updated:
+        return AgentDeleteBudgetResponse(
+            success=False,
+            message="❌ No se pudo eliminar el presupuesto.",
+            category=None,
+        ).model_dump()
+
+    return AgentDeleteBudgetResponse(
+        success=True,
+        message=f"🧹 Presupuesto eliminado para {updated['name']}.",
+        category=AgentCategoryItem(
+            id=updated["id"],
+            name=updated["name"],
+            monthly_limit=None,
+            current_spending=Decimal("0"),
+            parent_id=updated.get("parent_id"),
+            is_system=bool(updated.get("is_system", False)),
+        ),
+    ).model_dump()
+
+
+async def create_category_for_agent(
+    tenant_id: UUID,
+    name: str,
+    monthly_limit: Decimal | None = None,
+    alert_threshold: int = 80,
+    parent_id: UUID | None = None,
+) -> dict:
+    """Create a category for agent flows."""
+    from ..schemas.finance import AgentCreateCategoryResponse
+
+    existing = await repo.get_budget_category_by_name(tenant_id, name)
+    if existing:
+        return AgentCreateCategoryResponse(
+            success=False,
+            message="❌ Ya existe una categoría con ese nombre.",
+            category=None,
+        ).model_dump()
+
+    created = await repo.create_budget_category(
+        tenant_id=tenant_id,
+        name=name.title(),
+        monthly_limit=monthly_limit,
+        alert_threshold=alert_threshold,
+    )
+
+    # Optional parent assignment if requested
+    if parent_id:
+        created = await repo.update_budget_category(
+            tenant_id=tenant_id,
+            category_id=created["id"],
+            parent_id=parent_id,
+        ) or created
+
+    return AgentCreateCategoryResponse(
+        success=True,
+        message=f"✅ Categoría creada: {created['name']}",
+        category=AgentCategoryItem(
+            id=created["id"],
+            name=created["name"],
+            monthly_limit=Decimal(str(created["monthly_limit"])) if created.get("monthly_limit") is not None else None,
+            current_spending=Decimal("0"),
+            parent_id=created.get("parent_id"),
+            is_system=bool(created.get("is_system", False)),
+        ),
+    ).model_dump()
+
+
+async def update_category_for_agent(
+    tenant_id: UUID,
+    category_id: UUID | None = None,
+    category_name: str | None = None,
+    new_name: str | None = None,
+    monthly_limit: Decimal | None = None,
+    alert_threshold: int | None = None,
+) -> dict:
+    """Update a category by id or name."""
+    from ..schemas.finance import AgentUpdateCategoryResponse
+
+    category = None
+    if category_id:
+        category = await repo.get_budget_category_by_id(tenant_id, category_id)
+    elif category_name:
+        category = await repo.get_budget_category_by_name(tenant_id, category_name)
+
+    if not category:
+        return AgentUpdateCategoryResponse(
+            success=False,
+            message="❌ No se encontró la categoría a actualizar.",
+            category=None,
+        ).model_dump()
+
+    updates: dict = {}
+    if new_name:
+        updates["name"] = new_name.title()
+    if monthly_limit is not None:
+        updates["monthly_limit"] = monthly_limit
+    if alert_threshold is not None:
+        updates["alert_threshold"] = alert_threshold
+
+    updated = await repo.update_budget_category(
+        tenant_id=tenant_id,
+        category_id=category["id"],
+        **updates,
+    )
+
+    if not updated:
+        return AgentUpdateCategoryResponse(
+            success=False,
+            message="❌ No se pudo actualizar la categoría.",
+            category=None,
+        ).model_dump()
+
+    return AgentUpdateCategoryResponse(
+        success=True,
+        message=f"✏️ Categoría actualizada: {updated['name']}",
+        category=AgentCategoryItem(
+            id=updated["id"],
+            name=updated["name"],
+            monthly_limit=Decimal(str(updated["monthly_limit"])) if updated.get("monthly_limit") is not None else None,
+            current_spending=Decimal("0"),
+            parent_id=updated.get("parent_id"),
+            is_system=bool(updated.get("is_system", False)),
+        ),
+    ).model_dump()
+
+
+async def delete_category_for_agent(
+    tenant_id: UUID,
+    category_id: UUID | None = None,
+    category_name: str | None = None,
+) -> dict:
+    """Delete a category only if it has no linked expenses."""
+    from ..schemas.finance import AgentDeleteCategoryResponse
+
+    category = None
+    if category_id:
+        category = await repo.get_budget_category_by_id(tenant_id, category_id)
+    elif category_name:
+        category = await repo.get_budget_category_by_name(tenant_id, category_name)
+
+    if not category:
+        return AgentDeleteCategoryResponse(
+            success=False,
+            message="❌ No se encontró la categoría a eliminar.",
+            deleted_category_id=None,
+            blocked_has_expenses=False,
+        ).model_dump()
+
+    linked_expenses = await repo.count_expenses_by_category(tenant_id, category["id"])
+    if linked_expenses > 0:
+        return AgentDeleteCategoryResponse(
+            success=False,
+            message="❌ No puedo eliminar esa categoría porque tiene gastos asociados. Reasigná o eliminá esos gastos primero.",
+            deleted_category_id=None,
+            blocked_has_expenses=True,
+        ).model_dump()
+
+    deleted = await repo.delete_budget_category(tenant_id, category["id"])
+    if not deleted:
+        return AgentDeleteCategoryResponse(
+            success=False,
+            message="❌ No se pudo eliminar la categoría.",
+            deleted_category_id=None,
+            blocked_has_expenses=False,
+        ).model_dump()
+
+    return AgentDeleteCategoryResponse(
+        success=True,
+        message=f"🗑️ Categoría eliminada: {category['name']}",
+        deleted_category_id=category["id"],
+        blocked_has_expenses=False,
+    ).model_dump()
 
 
 async def delete_expenses_bulk_for_agent(

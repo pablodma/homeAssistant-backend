@@ -11,6 +11,9 @@ from ..middleware.auth import get_current_user, validate_tenant_access
 from ..repositories import finance as repo
 from ..schemas.auth import CurrentUser
 from ..schemas.finance import (
+    AgentCreateCategoryResponse,
+    AgentDeleteBudgetResponse,
+    AgentDeleteCategoryResponse,
     AgentDeleteExpenseRequest,
     AgentDeleteExpenseResponse,
     AgentGetBudgetRequest,
@@ -25,6 +28,7 @@ from ..schemas.finance import (
     AgentModifyExpenseResponse,
     AgentSetBudgetRequest,
     AgentSetBudgetResponse,
+    AgentUpdateCategoryResponse,
     BudgetCategoryCreate,
     BudgetCategoryResponse,
     BudgetCategoryUpdate,
@@ -115,6 +119,7 @@ async def agent_set_budget(
     tenant_id: UUID,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     _: Annotated[None, Depends(validate_tenant_access)],
+    category_id: UUID | None = Query(None, description="Optional category ID"),
     category: str = Query(..., description="Category name"),
     monthly_limit: Decimal = Query(..., ge=0, description="Monthly budget limit (0 = no limit)"),
     alert_threshold: int = Query(80, ge=0, le=100, description="Alert threshold percentage"),
@@ -127,6 +132,7 @@ async def agent_set_budget(
     """
     result = await finance_service.set_budget_for_agent(
         tenant_id=tenant_id,
+        category_id=category_id,
         category_name=category,
         monthly_limit=monthly_limit,
         alert_threshold=alert_threshold,
@@ -154,6 +160,7 @@ async def agent_delete_expense(
     tenant_id: UUID,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     _: Annotated[None, Depends(validate_tenant_access)],
+    expense_id: UUID | None = Query(None, description="Exact expense ID"),
     amount: Decimal | None = Query(None, description="Amount to match"),
     category: str | None = Query(None, description="Category to match"),
     description: str | None = Query(None, description="Description to match"),
@@ -166,6 +173,7 @@ async def agent_delete_expense(
     """
     result = await finance_service.delete_expense_for_agent(
         tenant_id=tenant_id,
+        expense_id=expense_id,
         amount=amount,
         category_name=category,
         description=description,
@@ -207,6 +215,7 @@ async def agent_modify_expense(
     tenant_id: UUID,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     _: Annotated[None, Depends(validate_tenant_access)],
+    expense_id: UUID | None = Query(None, description="Exact expense ID"),
     # Search criteria
     search_amount: Decimal | None = Query(None, description="Amount to search for"),
     search_category: str | None = Query(None, description="Category to search for"),
@@ -224,6 +233,7 @@ async def agent_modify_expense(
     """
     result = await finance_service.modify_expense_for_agent(
         tenant_id=tenant_id,
+        expense_id=expense_id,
         search_amount=search_amount,
         search_category=search_category,
         search_description=search_description,
@@ -233,6 +243,84 @@ async def agent_modify_expense(
         new_description=new_description,
     )
     return AgentModifyExpenseResponse(**result)
+
+
+@router.delete("/agent/budget", response_model=AgentDeleteBudgetResponse)
+async def agent_delete_budget(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    category_id: UUID | None = Query(None, description="Category ID"),
+    category: str | None = Query(None, description="Category name"),
+) -> AgentDeleteBudgetResponse:
+    """Delete budget limit for a category while keeping the category."""
+    result = await finance_service.delete_budget_for_agent(
+        tenant_id=tenant_id,
+        category_id=category_id,
+        category_name=category,
+    )
+    return AgentDeleteBudgetResponse(**result)
+
+
+@router.post("/agent/category", response_model=AgentCreateCategoryResponse)
+async def agent_create_category(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    name: str = Query(..., description="Category name"),
+    monthly_limit: Decimal | None = Query(None, ge=0, description="Monthly budget limit"),
+    alert_threshold: int = Query(80, ge=0, le=100, description="Alert threshold percentage"),
+    parent_id: UUID | None = Query(None, description="Optional parent category ID"),
+) -> AgentCreateCategoryResponse:
+    """Create category for conversational agent flows."""
+    result = await finance_service.create_category_for_agent(
+        tenant_id=tenant_id,
+        name=name,
+        monthly_limit=monthly_limit,
+        alert_threshold=alert_threshold,
+        parent_id=parent_id,
+    )
+    return AgentCreateCategoryResponse(**result)
+
+
+@router.patch("/agent/category", response_model=AgentUpdateCategoryResponse)
+async def agent_update_category(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    category_id: UUID | None = Query(None, description="Category ID"),
+    category_name: str | None = Query(None, description="Current category name"),
+    new_name: str | None = Query(None, description="New category name"),
+    monthly_limit: Decimal | None = Query(None, ge=0, description="Monthly limit"),
+    alert_threshold: int | None = Query(None, ge=0, le=100, description="Alert threshold"),
+) -> AgentUpdateCategoryResponse:
+    """Update category fields for conversational agent flows."""
+    result = await finance_service.update_category_for_agent(
+        tenant_id=tenant_id,
+        category_id=category_id,
+        category_name=category_name,
+        new_name=new_name,
+        monthly_limit=monthly_limit,
+        alert_threshold=alert_threshold,
+    )
+    return AgentUpdateCategoryResponse(**result)
+
+
+@router.delete("/agent/category", response_model=AgentDeleteCategoryResponse)
+async def agent_delete_category(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    category_id: UUID | None = Query(None, description="Category ID"),
+    category_name: str | None = Query(None, description="Category name"),
+) -> AgentDeleteCategoryResponse:
+    """Delete category only if it has no linked expenses."""
+    result = await finance_service.delete_category_for_agent(
+        tenant_id=tenant_id,
+        category_id=category_id,
+        category_name=category_name,
+    )
+    return AgentDeleteCategoryResponse(**result)
 
 
 # =============================================================================

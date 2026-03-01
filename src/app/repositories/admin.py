@@ -180,6 +180,7 @@ class AdminRepository:
         params.extend([page_size, offset])
 
         rows = await pool.fetch(query, *params)
+
         return [dict(row) for row in rows], total
 
     async def get_interaction(
@@ -347,6 +348,7 @@ class AdminRepository:
         params.extend([page_size, offset])
 
         rows = await pool.fetch(query, *params)
+
         return [dict(row) for row in rows], total
 
     async def get_quality_issue(
