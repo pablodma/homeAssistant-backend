@@ -1,10 +1,14 @@
 """Onboarding endpoints for tenant creation and member management."""
 
+import json
 import logging
 import time
+from base64 import urlsafe_b64encode
+from hashlib import sha256
 from typing import Annotated
 from uuid import UUID
 
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from jose import JWTError, jwt
 
@@ -37,6 +41,62 @@ from ..schemas.onboarding import (
 )
 
 router = APIRouter(tags=["Onboarding"])
+
+
+def _build_onboarding_link_cipher(secret: str) -> Fernet:
+    """Create a symmetric cipher from ONBOARDING_WEB_LINK_SECRET."""
+    key = urlsafe_b64encode(sha256(secret.encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def _encode_opaque_onboarding_token(phone: str, exp: int, secret: str) -> str:
+    """Encode onboarding payload into an opaque, URL-safe token."""
+    payload = json.dumps({"phone": phone, "exp": exp}, separators=(",", ":")).encode("utf-8")
+    token = _build_onboarding_link_cipher(secret).encrypt(payload)
+    return token.decode("utf-8")
+
+
+def _decode_opaque_onboarding_token(token: str, secret: str) -> str:
+    """Decode opaque onboarding token and return phone if valid."""
+    try:
+        payload_bytes = _build_onboarding_link_cipher(secret).decrypt(token.encode("utf-8"))
+        payload = json.loads(payload_bytes.decode("utf-8"))
+    except (InvalidToken, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired onboarding token",
+        ) from exc
+
+    phone = payload.get("phone")
+    exp = payload.get("exp")
+    now = int(time.time())
+    if not isinstance(phone, str) or not phone:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid onboarding token (missing phone)",
+        )
+    if not isinstance(exp, int) or exp <= now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired onboarding token",
+        )
+
+    return phone
+
+
+def _decode_onboarding_token(token: str, secret: str) -> str:
+    """Decode onboarding token supporting legacy JWT and opaque format."""
+    try:
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
+        phone = payload.get("phone")
+        if not phone:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid onboarding token (missing phone)",
+            )
+        return str(phone)
+    except JWTError:
+        return _decode_opaque_onboarding_token(token, secret)
 
 
 @router.get("/onboarding/status", response_model=OnboardingStatusResponse)
@@ -78,7 +138,7 @@ async def create_web_onboarding_link(
     Generate a signed URL for web onboarding (unregistered phone).
 
     Called by the bot when a user writes from a number not in users.
-    Returns a URL with a short-lived token so the frontend can complete
+    Returns a URL with an opaque short-lived token (`/onboarding/start/{token}`) so the frontend can complete
     onboarding and the backend can attach owner.phone from the token.
     If the phone is already registered, returns already_registered=True and url=null.
     """
@@ -89,16 +149,13 @@ async def create_web_onboarding_link(
         return WebLinkResponse(url=None, already_registered=True)
 
     exp_seconds = 24 * 3600  # 24 hours
-    payload = {
-        "phone": request.phone,
-        "exp": int(time.time()) + exp_seconds,
-    }
-    token = jwt.encode(
-        payload,
-        settings.onboarding_web_link_secret,
-        algorithm="HS256",
+    exp = int(time.time()) + exp_seconds
+    token = _encode_opaque_onboarding_token(
+        phone=request.phone,
+        exp=exp,
+        secret=settings.onboarding_web_link_secret,
     )
-    url = f"{settings.frontend_url.rstrip('/')}/onboarding?token={token}"
+    url = f"{settings.frontend_url.rstrip('/')}/onboarding/start/{token}"
     return WebLinkResponse(url=url, already_registered=False)
 
 
@@ -121,23 +178,10 @@ async def complete_onboarding(
 
     token_phone: str | None = None
     if request.onboarding_token:
-        try:
-            payload = jwt.decode(
-                request.onboarding_token,
-                settings.onboarding_web_link_secret,
-                algorithms=["HS256"],
-            )
-            token_phone = payload.get("phone")
-            if not token_phone:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid onboarding token (missing phone)",
-                )
-        except JWTError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid or expired onboarding token",
-            )
+        token_phone = _decode_onboarding_token(
+            request.onboarding_token,
+            settings.onboarding_web_link_secret,
+        )
 
     # Check if any phone is already registered to another user (allow if it's the current user's own phone)
     for member in request.members:

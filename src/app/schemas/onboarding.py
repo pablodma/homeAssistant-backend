@@ -49,7 +49,7 @@ class OnboardingRequest(BaseModel):
     currency: str = Field(default="ARS")
     onboarding_token: str | None = Field(
         default=None,
-        description="Optional JWT from web-link (WhatsApp flow); sets owner.phone from token",
+        description="Optional signed token from web-link (WhatsApp flow); sets owner.phone from token",
     )
     
     @field_validator("members")
@@ -190,7 +190,7 @@ class WebLinkRequest(BaseModel):
 class WebLinkResponse(BaseModel):
     """Response with URL for web onboarding (or already_registered)."""
 
-    url: str | None = Field(default=None, description="Full URL with token; null if already registered")
+    url: str | None = Field(default=None, description="Full URL with opaque token; null if already registered")
     already_registered: bool = Field(default=False, description="True if phone is already in users")
 
 
