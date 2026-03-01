@@ -19,6 +19,7 @@ from .routers import (
     health,
     onboarding,
     plans,
+    reminders,
     subscriptions,
     tenants,
 )
@@ -82,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(tenants.router, prefix="/api/v1")
     app.include_router(finance.router, prefix="/api/v1")
     app.include_router(calendar.router, prefix="/api/v1")
+    app.include_router(reminders.router, prefix="/api/v1")
     # OAuth callback endpoint (without tenant prefix)
     app.include_router(oauth_router, prefix="/api/v1")
     # Admin endpoints

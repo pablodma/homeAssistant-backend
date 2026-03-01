@@ -303,7 +303,7 @@ class AgentOnboardingCompleteRequest(BaseModel):
     @classmethod
     def validate_agent_name(cls, v: str) -> str:
         """Validate agent name is one of the known agents."""
-        valid_agents = {"finance", "calendar", "reminder", "shopping", "vehicle"}
+        valid_agents = {"finance", "agenda", "shopping", "vehicle"}
         if v not in valid_agents:
             raise ValueError(f"Agent must be one of: {', '.join(sorted(valid_agents))}")
         return v

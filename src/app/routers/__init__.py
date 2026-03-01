@@ -1,6 +1,6 @@
 """API routers."""
 
-from . import access, admin, auth, calendar, coupons, finance, health, plans, subscriptions, tenants
+from . import access, admin, auth, calendar, coupons, finance, health, plans, reminders, subscriptions, tenants
 
 __all__ = [
     "access",
@@ -11,6 +11,7 @@ __all__ = [
     "finance",
     "health",
     "plans",
+    "reminders",
     "subscriptions",
     "tenants",
 ]

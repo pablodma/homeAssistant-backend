@@ -233,7 +233,7 @@ async def get_subscription_usage(
     messages_limit = plan.get("max_messages_month") if plan else None
     members_limit = plan.get("max_members", 2) if plan else 2
     history_days = plan.get("history_days", 7) if plan else 7
-    enabled_services = plan.get("enabled_services", ["reminder", "shopping"]) if plan else ["reminder", "shopping"]
+    enabled_services = plan.get("enabled_services", ["agenda", "shopping"]) if plan else ["agenda", "shopping"]
 
     # Count messages this month
     messages_used = await pool.fetchval(

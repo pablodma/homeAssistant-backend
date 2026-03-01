@@ -109,10 +109,9 @@ async def compare_plans(
 # =============================================================================
 
 SERVICES_CATALOG = [
-    {"id": "reminder", "name": "Recordatorios"},
+    {"id": "agenda", "name": "Agenda"},
     {"id": "shopping", "name": "Listas de compras"},
     {"id": "finance", "name": "Presupuesto y Gastos"},
-    {"id": "calendar", "name": "Calendario"},
     {"id": "vehicle", "name": "Gestión de Vehículos"},
 ]
 
