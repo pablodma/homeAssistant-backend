@@ -11,7 +11,8 @@ from src.app.services.access_policy import AccessPolicyService
     "tenant_id,onboarding_completed,tenant_active,subscription_status,expected_next_step,expected_access",
     [
         (None, False, False, None, "register", False),
-        (uuid4(), False, True, None, "onboarding", False),
+        (uuid4(), False, True, None, "subscribe", False),
+        (uuid4(), False, True, "authorized", "onboarding", False),
         (uuid4(), True, True, "pending", "subscribe", False),
         (uuid4(), True, True, "cancelled", "subscribe", False),
         (uuid4(), True, False, "authorized", "contact_support", False),
@@ -39,3 +40,4 @@ def test_build_access_status_matrix(
     assert result.can_access_dashboard is expected_access
     assert result.can_interact_agent is expected_access
     assert result.has_active_subscription is (subscription_status == "authorized")
+    assert result.is_registered is (tenant_id is not None)

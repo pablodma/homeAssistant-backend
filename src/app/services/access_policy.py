@@ -46,24 +46,24 @@ class AccessPolicyService:
     ) -> AccessStatusResponse:
         """Build deterministic access flags and next step."""
         has_tenant = tenant_id is not None
-        is_registered = has_tenant and onboarding_completed
+        is_registered = has_tenant
         has_active_subscription = subscription_status == "authorized"
 
         can_access = (
             has_tenant
-            and is_registered
             and tenant_active
             and has_active_subscription
+            and onboarding_completed
         )
 
         if not has_tenant:
             next_step = "register"
-        elif not onboarding_completed:
-            next_step = "onboarding"
         elif not tenant_active:
             next_step = "contact_support"
         elif not has_active_subscription:
             next_step = "subscribe"
+        elif not onboarding_completed:
+            next_step = "onboarding"
         else:
             next_step = "dashboard"
 
