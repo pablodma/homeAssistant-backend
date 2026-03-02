@@ -66,12 +66,14 @@ async def resolve_category(tenant_id: UUID, category_name: str) -> UUID | None:
     With the fixed taxonomy, categories are never created dynamically.
     Returns the matching subcategory ID, or None if no match is found.
     """
-    category = await repo.get_budget_category_by_name(tenant_id, category_name)
-    if category:
-        return category["id"]
-
     all_cats = await repo.get_all_budget_categories(tenant_id)
     subcats = [c for c in all_cats if c.get("parent_id") is not None]
+
+    # Exact match only against subcategories (never groups).
+    for sub in subcats:
+        if sub["name"].lower().strip() == category_name.lower().strip():
+            return sub["id"]
+
     needle = category_name.lower().strip()
     for sub in subcats:
         if needle in sub["name"].lower() or sub["name"].lower() in needle:
@@ -89,6 +91,18 @@ async def create_expense_with_alert(
 ) -> AgentLogExpenseResponse:
     """Create expense and check for budget alerts."""
     category_id = await resolve_category(tenant_id, category_name)
+    assigned_subcategory = category_name
+    assigned_group = None
+
+    if category_id:
+        resolved_category = await repo.get_budget_category_by_id(tenant_id, category_id)
+        if resolved_category:
+            assigned_subcategory = resolved_category.get("name", category_name)
+            parent_id = resolved_category.get("parent_id")
+            if parent_id:
+                parent_group = await repo.get_budget_category_by_id(tenant_id, parent_id)
+                if parent_group:
+                    assigned_group = parent_group.get("name")
 
     expense = await repo.create_expense(
         tenant_id=tenant_id,
@@ -102,22 +116,38 @@ async def create_expense_with_alert(
     budget_status = None
     if category_id:
         alert = await check_category_alert(tenant_id, category_id)
-        budget_status = await get_budget_status_for_category(tenant_id, category_id, category_name)
+        budget_status = await get_budget_status_for_category(
+            tenant_id,
+            category_id,
+            assigned_subcategory,
+        )
+
+    assignment_line = (
+        f"📌 Lo asigné a {assigned_group} > {assigned_subcategory}."
+        if assigned_group
+        else f"📌 Lo asigné a {assigned_subcategory}."
+    )
+    message = f"✅ Registré un gasto de ${amount:,.0f}.\n{assignment_line}"
 
     if alert:
         if alert.alert_level == "exceeded":
-            message = f"⚠️ Gasto registrado. ¡PRESUPUESTO EXCEDIDO en {category_name}! ({alert.percentage_used:.0f}%)"
+            message += f"\n⚠️ Presupuesto excedido en {alert.category_name} ({alert.percentage_used:.0f}%)."
         elif alert.alert_level == "critical":
-            message = f"⚠️ Gasto registrado. ¡Alerta crítica en {category_name}! ({alert.percentage_used:.0f}%)"
+            message += f"\n⚠️ Alerta crítica en {alert.category_name} ({alert.percentage_used:.0f}%)."
         else:
-            message = f"✅ Gasto registrado. Atención: {category_name} al {alert.percentage_used:.0f}%"
+            message += f"\n⚠️ Atención: {alert.category_name} al {alert.percentage_used:.0f}%."
+
+    if assigned_group:
+        message += f"\n👉 ¿Querés definir o ajustar el presupuesto mensual de {assigned_group}?"
     else:
-        message = f"✅ Gasto de ${amount:,.0f} registrado en {category_name}"
+        message += "\n👉 ¿Querés ver el resumen del mes o cargar otro gasto?"
 
     return AgentLogExpenseResponse(
         success=True,
         expense_id=expense["id"],
         message=message,
+        assigned_group=assigned_group,
+        assigned_subcategory=assigned_subcategory,
         alert=alert,
         budget_status=budget_status,
     )
@@ -261,73 +291,108 @@ async def get_budget_for_agent(
     tenant_id: UUID,
     category_name: str | None = None,
 ) -> AgentGetBudgetResponse:
-    """Get budget status for agent."""
+    """Get budget status for agent at group level.
+
+    Budgets are defined at top-level groups (parent_id IS NULL), while expenses
+    are linked to subcategories. This method aggregates subcategory spending per
+    group and reports budget usage per group.
+    """
     today = date.today()
-    spending_data = await repo.get_monthly_spending_by_category(
+    hierarchy = await repo.get_hierarchical_categories_with_spending(
         tenant_id, today.year, today.month
     )
-    
+
+    all_cats = await repo.get_all_budget_categories(tenant_id)
+    groups_by_id = {str(c["id"]): c for c in all_cats if c.get("parent_id") is None}
+    subcats_by_name = {
+        c["name"].lower().strip(): str(c["parent_id"])
+        for c in all_cats
+        if c.get("parent_id") is not None
+    }
+
+    group_filter_ids: set[str] | None = None
+    if category_name:
+        normalized = category_name.lower().strip()
+        group_matches = {
+            gid
+            for gid, g in groups_by_id.items()
+            if g["name"].lower().strip() == normalized
+        }
+        if group_matches:
+            group_filter_ids = group_matches
+        else:
+            parent_group_id = subcats_by_name.get(normalized)
+            if parent_group_id:
+                group_filter_ids = {parent_group_id}
+
     budgets = []
     alerts = []
-    
-    for cat in spending_data:
-        if category_name and cat["name"].lower() != category_name.lower():
+
+    for group in hierarchy:
+        group_id = str(group["id"])
+        if group_filter_ids is not None and group_id not in group_filter_ids:
             continue
-        
-        limit = Decimal(str(cat["monthly_limit"])) if cat["monthly_limit"] else None
-        spent = Decimal(str(cat["current_spending"]))
+
+        limit = Decimal(str(group["monthly_limit"])) if group["monthly_limit"] else None
+        spent = sum(Decimal(str(sub.get("total_spent", 0))) for sub in group.get("subcategories", []))
         remaining = limit - spent if limit else None
         percentage = float(spent / limit * 100) if limit and limit > 0 else 0
-        threshold = cat.get("alert_threshold", 80)
+        threshold = 80
         status = _get_alert_level(percentage, threshold)
-        
+
         budgets.append(AgentBudgetStatus(
-            category=cat["name"],
+            category=group["name"],
             limit=limit,
             spent=spent,
             remaining=remaining,
             percentage=percentage,
             status=status,
         ))
-        
+
         if status in ("warning", "critical", "exceeded"):
             if status == "exceeded":
-                alerts.append(f"🚨 {cat['name']}: EXCEDIDO ({percentage:.0f}%)")
+                alerts.append(f"🚨 {group['name']}: EXCEDIDO ({percentage:.0f}%)")
             elif status == "critical":
-                alerts.append(f"⚠️ {cat['name']}: Crítico ({percentage:.0f}%)")
+                alerts.append(f"⚠️ {group['name']}: Crítico ({percentage:.0f}%)")
             else:
-                alerts.append(f"📊 {cat['name']}: Atención ({percentage:.0f}%)")
-    
+                alerts.append(f"📊 {group['name']}: Atención ({percentage:.0f}%)")
+
     return AgentGetBudgetResponse(budgets=budgets, alerts=alerts)
 
 
 async def list_categories_for_agent(tenant_id: UUID) -> AgentListCategoriesResponse:
-    """List all categories for agent to show options to user.
-    
-    Returns all budget categories with their current spending for the month.
+    """List subcategories for agent to show options when registering expenses.
+
+    Only returns subcategories (parent_id IS NOT NULL) because expenses are
+    always linked to a subcategory, never to a top-level group.  Each item
+    includes the parent group name for context.
     """
-    categories = await repo.get_all_budget_categories(tenant_id)
-    
-    if not categories:
+    all_cats = await repo.get_all_budget_categories(tenant_id)
+
+    if not all_cats:
         return AgentListCategoriesResponse(categories=[], count=0)
-    
-    # Get current month spending
+
+    groups_map = {str(c["id"]): c["name"] for c in all_cats if c.get("parent_id") is None}
+    subcategories = [c for c in all_cats if c.get("parent_id") is not None]
+
     today = date.today()
     spending_data = await repo.get_monthly_spending_by_category(
         tenant_id, today.year, today.month
     )
     spending_map = {s["category_id"]: s["current_spending"] for s in spending_data}
-    
+
     items = []
-    for cat in categories:
+    for cat in subcategories:
         current_spending = Decimal(str(spending_map.get(cat["id"], 0)))
+        group_name = groups_map.get(str(cat["parent_id"]), "")
+        display_name = f"{cat['name']} ({group_name})" if group_name else cat["name"]
         items.append(AgentCategoryItem(
             id=cat["id"],
-            name=cat["name"],
+            name=display_name,
             monthly_limit=Decimal(str(cat["monthly_limit"])) if cat.get("monthly_limit") else None,
             current_spending=current_spending,
         ))
-    
+
     return AgentListCategoriesResponse(categories=items, count=len(items))
 
 

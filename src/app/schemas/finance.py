@@ -258,6 +258,8 @@ class AgentLogExpenseResponse(BaseSchema):
     success: bool
     expense_id: UUID
     message: str
+    assigned_group: str | None = None
+    assigned_subcategory: str | None = None
     alert: BudgetAlert | None = None
     budget_status: BudgetStatusInfo | None = None  # Always included if category has limit
 
