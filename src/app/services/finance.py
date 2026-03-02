@@ -93,11 +93,18 @@ async def create_expense_with_alert(
     category_id = await resolve_category(tenant_id, category_name)
     assigned_subcategory = category_name
     assigned_group = None
+    first_expense_in_category = False
+    category_has_budget = False
 
     if category_id:
+        # Detect first expense BEFORE insert.
+        previous_count = await repo.count_expenses_by_category(tenant_id, category_id)
+        first_expense_in_category = previous_count == 0
+
         resolved_category = await repo.get_budget_category_by_id(tenant_id, category_id)
         if resolved_category:
             assigned_subcategory = resolved_category.get("name", category_name)
+            category_has_budget = resolved_category.get("monthly_limit") is not None
             parent_id = resolved_category.get("parent_id")
             if parent_id:
                 parent_group = await repo.get_budget_category_by_id(tenant_id, parent_id)
@@ -137,8 +144,12 @@ async def create_expense_with_alert(
         else:
             message += f"\n⚠️ Atención: {alert.category_name} al {alert.percentage_used:.0f}%."
 
-    if assigned_group:
-        message += f"\n👉 ¿Querés definir o ajustar el presupuesto mensual de {assigned_group}?"
+    if first_expense_in_category and category_id:
+        action = "ajustar" if category_has_budget else "definir"
+        message += (
+            f"\n👉 Es tu primer gasto en {assigned_subcategory}. "
+            f"¿Querés {action} un presupuesto mensual para {assigned_subcategory}?"
+        )
     else:
         message += "\n👉 ¿Querés ver el resumen del mes o cargar otro gasto?"
 
