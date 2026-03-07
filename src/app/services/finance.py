@@ -9,11 +9,16 @@ from ..repositories import finance as repo
 from ..schemas.finance import (
     AgentBudgetStatus,
     AgentCategoryItem,
+    AgentDeleteIncomeResponse,
     AgentGetBudgetResponse,
+    AgentGetIncomesResponse,
     AgentGetReportResponse,
+    AgentIncomeItem,
     AgentListCategoriesResponse,
     AgentLogExpenseResponse,
     AgentLogIncomeResponse,
+    AgentModifyIncomeResponse,
+    AgentSearchExpensesResponse,
     BudgetAlert,
     BudgetCategoryResponse,
     BudgetGroupOverview,
@@ -1137,4 +1142,223 @@ async def create_income_for_agent(
         success=True,
         income_id=income["id"],
         message=f"✅ Ingreso de ${amount:,.0f} registrado",
+    )
+
+
+async def get_incomes_for_agent(
+    tenant_id: UUID,
+    period: Literal["day", "week", "month", "year"] = "month",
+) -> AgentGetIncomesResponse:
+    """Get incomes for a period for the agent."""
+    start_date, end_date = _get_period_dates(period)
+
+    rows = await repo.get_incomes(
+        tenant_id=tenant_id,
+        start_date=start_date,
+        end_date=end_date,
+        limit=1000,
+        offset=0,
+    )
+
+    incomes = [
+        AgentIncomeItem(
+            id=r["id"],
+            amount=Decimal(str(r["amount"])),
+            description=r.get("description"),
+            income_date=r["income_date"],
+        )
+        for r in rows
+    ]
+    total = sum(i.amount for i in incomes)
+
+    period_names = {
+        "day": "Hoy",
+        "week": "Esta semana",
+        "month": "Este mes",
+        "year": "Este año",
+    }
+
+    return AgentGetIncomesResponse(
+        incomes=incomes,
+        total=total,
+        count=len(incomes),
+        period=period_names.get(period, period),
+    )
+
+
+async def delete_income_for_agent(
+    tenant_id: UUID,
+    income_id: UUID | None = None,
+    amount: Decimal | None = None,
+    description: str | None = None,
+    income_date: date | None = None,
+) -> dict:
+    """Delete an income matching the given criteria."""
+    income: dict | None = None
+
+    # Deterministic path: explicit income id
+    if income_id:
+        income = await repo.get_income_by_id(tenant_id, income_id)
+        if not income:
+            return AgentDeleteIncomeResponse(
+                success=False,
+                message="❌ No se encontró el ingreso indicado",
+                deleted_income=None,
+            ).model_dump()
+    else:
+        # Default to today if no date provided
+        if income_date is None:
+            income_date = date.today()
+
+        income = await repo.search_income(
+            tenant_id=tenant_id,
+            amount=amount,
+            description=description,
+            income_date=income_date,
+        )
+
+    if not income:
+        return AgentDeleteIncomeResponse(
+            success=False,
+            message="❌ No se encontró ningún ingreso que coincida con los criterios",
+            deleted_income=None,
+        ).model_dump()
+
+    deleted = await repo.delete_income(tenant_id, income["id"])
+
+    if deleted:
+        desc = income.get("description") or "Sin descripción"
+        return AgentDeleteIncomeResponse(
+            success=True,
+            message=f"🗑️ Ingreso eliminado: ${income['amount']:,.0f} - {desc} ({income['income_date']})",
+            deleted_income={
+                "id": str(income["id"]),
+                "amount": float(income["amount"]),
+                "description": income.get("description"),
+                "date": str(income["income_date"]),
+            },
+        ).model_dump()
+
+    return AgentDeleteIncomeResponse(
+        success=False,
+        message="❌ Error al eliminar el ingreso",
+        deleted_income=None,
+    ).model_dump()
+
+
+async def update_income_for_agent(
+    tenant_id: UUID,
+    income_id: UUID | None = None,
+    search_amount: Decimal | None = None,
+    search_description: str | None = None,
+    search_date: date | None = None,
+    new_amount: Decimal | None = None,
+    new_description: str | None = None,
+    new_date: date | None = None,
+) -> dict:
+    """Modify an income matching the given criteria."""
+    income: dict | None = None
+
+    # Deterministic path: explicit income id
+    if income_id:
+        income = await repo.get_income_by_id(tenant_id, income_id)
+        if not income:
+            return AgentModifyIncomeResponse(
+                success=False,
+                message="❌ No se encontró el ingreso indicado",
+                modified_income=None,
+            ).model_dump()
+    else:
+        # Default to today if no date provided
+        if search_date is None:
+            search_date = date.today()
+
+        income = await repo.search_income(
+            tenant_id=tenant_id,
+            amount=search_amount,
+            description=search_description,
+            income_date=search_date,
+        )
+
+    if not income:
+        return AgentModifyIncomeResponse(
+            success=False,
+            message="❌ No se encontró ningún ingreso que coincida con los criterios",
+            modified_income=None,
+        ).model_dump()
+
+    # Build updates
+    updates = {}
+    if new_amount is not None:
+        updates["amount"] = new_amount
+    if new_description is not None:
+        updates["description"] = new_description
+    if new_date is not None:
+        updates["income_date"] = new_date
+
+    if not updates:
+        return AgentModifyIncomeResponse(
+            success=False,
+            message="❌ No se especificaron cambios para realizar",
+            modified_income=None,
+        ).model_dump()
+
+    updated = await repo.update_income(tenant_id, income["id"], **updates)
+
+    if updated:
+        desc = updated.get("description") or "Sin descripción"
+        return AgentModifyIncomeResponse(
+            success=True,
+            message=f"✏️ Ingreso modificado: ${updated['amount']:,.0f} - {desc}",
+            modified_income={
+                "id": str(updated["id"]),
+                "amount": float(updated["amount"]),
+                "description": updated.get("description"),
+                "date": str(updated["income_date"]),
+            },
+        ).model_dump()
+
+    return AgentModifyIncomeResponse(
+        success=False,
+        message="❌ Error al modificar el ingreso",
+        modified_income=None,
+    ).model_dump()
+
+
+async def search_expenses_for_agent(
+    tenant_id: UUID,
+    amount: Decimal | None = None,
+    description: str | None = None,
+    expense_date: date | None = None,
+    category_name: str | None = None,
+    limit: int = 5,
+) -> AgentSearchExpensesResponse:
+    """Search expenses matching criteria for the agent."""
+    category_id = None
+    if category_name:
+        category_id = await resolve_category(tenant_id, category_name)
+
+    rows = await repo.search_expenses(
+        tenant_id=tenant_id,
+        amount=amount,
+        category_id=category_id,
+        description=description,
+        expense_date=expense_date,
+        limit=limit,
+    )
+
+    expenses = [
+        {
+            "id": str(r["id"]),
+            "amount": float(r["amount"]),
+            "category_name": r.get("category_name") or "Sin categoría",
+            "description": r.get("description"),
+            "date": str(r["expense_date"]),
+        }
+        for r in rows
+    ]
+
+    return AgentSearchExpensesResponse(
+        expenses=expenses,
+        count=len(expenses),
     )

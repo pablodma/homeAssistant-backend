@@ -442,6 +442,42 @@ class AgentDeleteCategoryResponse(BaseSchema):
     blocked_has_expenses: bool = False
 
 
+class AgentIncomeItem(BaseSchema):
+    """Single income item for agent responses."""
+    id: UUID
+    amount: Decimal
+    description: str | None = None
+    income_date: date
+
+
+class AgentGetIncomesResponse(BaseSchema):
+    """Response with list of incomes for a period."""
+    incomes: list[AgentIncomeItem]
+    total: Decimal
+    count: int
+    period: str
+
+
+class AgentDeleteIncomeResponse(BaseSchema):
+    """Response after deleting an income."""
+    success: bool
+    message: str
+    deleted_income: dict | None = None
+
+
+class AgentModifyIncomeResponse(BaseSchema):
+    """Response after modifying an income."""
+    success: bool
+    message: str
+    modified_income: dict | None = None
+
+
+class AgentSearchExpensesResponse(BaseSchema):
+    """Response with list of matching expenses."""
+    expenses: list[dict]
+    count: int
+
+
 class AgentDeleteBudgetRequest(BaseSchema):
     """Request to remove monthly limit from a category budget."""
 

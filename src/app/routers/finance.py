@@ -16,8 +16,10 @@ from ..schemas.finance import (
     AgentDeleteCategoryResponse,
     AgentDeleteExpenseRequest,
     AgentDeleteExpenseResponse,
+    AgentDeleteIncomeResponse,
     AgentGetBudgetRequest,
     AgentGetBudgetResponse,
+    AgentGetIncomesResponse,
     AgentGetReportRequest,
     AgentGetReportResponse,
     AgentListCategoriesResponse,
@@ -26,6 +28,8 @@ from ..schemas.finance import (
     AgentLogIncomeResponse,
     AgentModifyExpenseRequest,
     AgentModifyExpenseResponse,
+    AgentModifyIncomeResponse,
+    AgentSearchExpensesResponse,
     AgentSetBudgetRequest,
     AgentSetBudgetResponse,
     AgentUpdateCategoryResponse,
@@ -631,6 +635,92 @@ async def agent_log_income(
         amount=amount,
         description=description,
         income_date=income_date,
+    )
+
+
+@router.get("/agent/incomes", response_model=AgentGetIncomesResponse)
+async def agent_get_incomes(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    period: str = Query("month", pattern="^(day|week|month|year)$"),
+) -> AgentGetIncomesResponse:
+    """Get incomes for a period from the WhatsApp agent."""
+    return await finance_service.get_incomes_for_agent(
+        tenant_id=tenant_id,
+        period=period,  # type: ignore
+    )
+
+
+@router.delete("/agent/income", response_model=AgentDeleteIncomeResponse)
+async def agent_delete_income(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    income_id: UUID | None = Query(None, description="Exact income ID"),
+    amount: Decimal | None = Query(None, description="Amount to match"),
+    description: str | None = Query(None, description="Description to match"),
+    income_date: date | None = Query(None, description="Date to match"),
+) -> AgentDeleteIncomeResponse:
+    """Delete an income from the WhatsApp agent."""
+    result = await finance_service.delete_income_for_agent(
+        tenant_id=tenant_id,
+        income_id=income_id,
+        amount=amount,
+        description=description,
+        income_date=income_date,
+    )
+    return AgentDeleteIncomeResponse(**result)
+
+
+@router.patch("/agent/income", response_model=AgentModifyIncomeResponse)
+async def agent_modify_income(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    income_id: UUID | None = Query(None, description="Exact income ID"),
+    # Search criteria
+    search_amount: Decimal | None = Query(None, description="Amount to search for"),
+    search_description: str | None = Query(None, description="Description to search for"),
+    search_date: date | None = Query(None, description="Date to search for"),
+    # New values
+    new_amount: Decimal | None = Query(None, description="New amount"),
+    new_description: str | None = Query(None, description="New description"),
+    new_date: date | None = Query(None, description="New date"),
+) -> AgentModifyIncomeResponse:
+    """Modify an income from the WhatsApp agent."""
+    result = await finance_service.update_income_for_agent(
+        tenant_id=tenant_id,
+        income_id=income_id,
+        search_amount=search_amount,
+        search_description=search_description,
+        search_date=search_date,
+        new_amount=new_amount,
+        new_description=new_description,
+        new_date=new_date,
+    )
+    return AgentModifyIncomeResponse(**result)
+
+
+@router.get("/agent/expenses/search", response_model=AgentSearchExpensesResponse)
+async def agent_search_expenses(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    amount: Decimal | None = Query(None, description="Amount to match (±10%)"),
+    description: str | None = Query(None, description="Description to match (partial)"),
+    expense_date: date | None = Query(None, description="Date to match"),
+    category: str | None = Query(None, description="Category to match"),
+    limit: int = Query(5, ge=1, le=50, description="Max results"),
+) -> AgentSearchExpensesResponse:
+    """Search expenses from the WhatsApp agent."""
+    return await finance_service.search_expenses_for_agent(
+        tenant_id=tenant_id,
+        amount=amount,
+        description=description,
+        expense_date=expense_date,
+        category_name=category,
+        limit=limit,
     )
 
 
