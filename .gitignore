@@ -49,3 +49,6 @@ logs/
 *.key
 credentials.json
 secrets.yaml
+
+# Claude Code agent instructions (live at project root level)
+CLAUDE.md
