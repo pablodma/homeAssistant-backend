@@ -3,7 +3,7 @@
 FROM python:3.11-slim
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.6.14 /uv /bin/uv
 
 WORKDIR /app
 
@@ -16,7 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml uv.lock ./
 
 # Install dependencies (production only, no dev extras)
-RUN uv sync --no-dev --system --frozen
+ENV UV_COMPILE_BYTECODE=1
+RUN uv sync --no-dev --frozen
 
 # Copy application code
 COPY src/ src/
@@ -30,7 +31,7 @@ EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+    CMD .venv/bin/python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
 # Run application
-CMD ["uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD [".venv/bin/uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
