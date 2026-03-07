@@ -112,10 +112,23 @@ async def create_event(
             )
             event.sync_status = SyncStatus.PENDING_SYNC
 
+    # Check for time conflicts with other events
+    conflicts = None
+    availability = await check_availability(
+        tenant_id, data.event_date, data.start_time or time(9, 0),
+        duration_minutes=data.duration_minutes,
+        user_id_for_google=user_id_for_sync,
+    )
+    if availability.conflicts:
+        conflicts = [c for c in availability.conflicts if c.id != event.id]
+        if not conflicts:
+            conflicts = None
+
     return EventWithDuplicateCheck(
         event=event,
         duplicate_warning=None,
         created=True,
+        conflicts=conflicts,
     )
 
 
@@ -137,6 +150,7 @@ async def list_events(
     search_query: str | None = None,
     include_google: bool = True,
     user_id_for_google: UUID | None = None,
+    created_by: UUID | None = None,
 ) -> EventListResponse:
     """List events with optional Google Calendar integration."""
     if not start_date:
@@ -149,9 +163,23 @@ async def list_events(
         start_date=start_date,
         end_date=end_date,
         search_query=search_query,
+        created_by=created_by,
     )
 
     events = [_record_to_event_response(r) for r in records]
+
+    # Expand recurring events into virtual occurrences within the date range
+    recurring_records = await calendar_repo.get_recurring_events(tenant_id)
+    recurring_events = [_record_to_event_response(r) for r in recurring_records]
+    if created_by:
+        recurring_events = [e for e in recurring_events if e.created_by == created_by]
+    virtual_occurrences = _expand_recurring_events(recurring_events, start_date, end_date)
+    # Filter out virtuals that overlap with already-fetched events (same id + same date)
+    existing_dates = {(e.id, e.start_datetime.date()) for e in events}
+    for vo in virtual_occurrences:
+        if (vo.id, vo.start_datetime.date()) not in existing_dates:
+            events.append(vo)
+
     local_google_ids = {e.google_event_id for e in events if e.google_event_id}
 
     if include_google and user_id_for_google:
@@ -302,6 +330,89 @@ async def get_next_event(tenant_id: UUID) -> EventResponse | None:
     if not record:
         return None
     return _record_to_event_response(record)
+
+
+# =============================================================================
+# Recurring Event Expansion
+# =============================================================================
+
+
+def _expand_recurring_events(
+    events: list[EventResponse],
+    start_date: date,
+    end_date: date,
+) -> list[EventResponse]:
+    """Expand recurring events into virtual occurrences within a date range."""
+    expanded: list[EventResponse] = []
+
+    for event in events:
+        if not event.recurrence_rule:
+            continue
+
+        rule = event.recurrence_rule.lower()
+        original_date = event.start_datetime.date()
+        original_time = event.start_datetime.time()
+        duration = (
+            (event.end_datetime - event.start_datetime)
+            if event.end_datetime
+            else timedelta(hours=1)
+        )
+
+        current = start_date
+        while current <= end_date:
+            if current == original_date:
+                current += timedelta(days=1)
+                continue
+
+            should_include = False
+
+            if rule == "daily":
+                should_include = current >= original_date
+            elif rule == "weekly":
+                should_include = (
+                    current >= original_date
+                    and current.weekday() == original_date.weekday()
+                )
+            elif rule == "monthly":
+                should_include = (
+                    current >= original_date
+                    and current.day == original_date.day
+                )
+            elif rule == "weekdays":
+                should_include = (
+                    current >= original_date
+                    and current.weekday() < 5  # Mon-Fri
+                )
+
+            if should_include:
+                new_start = datetime.combine(current, original_time)
+                new_end = new_start + duration
+
+                virtual = EventResponse(
+                    id=event.id,
+                    tenant_id=event.tenant_id,
+                    title=event.title,
+                    description=event.description,
+                    location=event.location,
+                    start_datetime=new_start,
+                    end_datetime=new_end,
+                    timezone=event.timezone,
+                    recurrence_rule=event.recurrence_rule,
+                    created_at=event.created_at,
+                    updated_at=event.updated_at,
+                    created_by=event.created_by,
+                    creator_name=event.creator_name,
+                    is_recurring=True,
+                    google_event_id=event.google_event_id,
+                    google_calendar_id=event.google_calendar_id,
+                    sync_status=event.sync_status,
+                    source=event.source,
+                )
+                expanded.append(virtual)
+
+            current += timedelta(days=1)
+
+    return expanded
 
 
 # =============================================================================
@@ -579,6 +690,10 @@ async def agent_create_event(
             user_id_for_sync = user["id"]
             actual_created_by = user["id"]
 
+    recurrence_rule = None
+    if request.recurrence and request.recurrence != "none":
+        recurrence_rule = request.recurrence
+
     data = EventCreate(
         title=request.title,
         event_date=request.event_date,
@@ -586,6 +701,7 @@ async def agent_create_event(
         duration_minutes=request.duration_minutes,
         location=request.location,
         description=request.description,
+        recurrence_rule=recurrence_rule,
     )
 
     return await create_event(
@@ -604,10 +720,15 @@ async def agent_list_events(
 ) -> EventListResponse:
     """List events from agent request."""
     user_id_for_google = None
-    if user_phone and request.include_google:
+    created_by = None
+
+    if user_phone:
         user = await calendar_repo.get_user_by_phone(user_phone)
         if user:
-            user_id_for_google = user["id"]
+            if request.include_google:
+                user_id_for_google = user["id"]
+            if request.only_mine:
+                created_by = user["id"]
 
     return await list_events(
         tenant_id=tenant_id,
@@ -616,6 +737,7 @@ async def agent_list_events(
         search_query=request.search_query,
         include_google=request.include_google,
         user_id_for_google=user_id_for_google,
+        created_by=created_by,
     )
 
 
@@ -790,6 +912,7 @@ def _record_to_event_response(record) -> EventResponse:
         created_at=record["created_at"],
         updated_at=record.get("updated_at", record["created_at"]),
         created_by=record.get("created_by"),
+        creator_name=record.get("creator_name"),
         google_event_id=record.get("google_event_id"),
         google_calendar_id=record.get("google_calendar_id"),
         sync_status=SyncStatus(record.get("sync_status", "local")),

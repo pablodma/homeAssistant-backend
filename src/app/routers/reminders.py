@@ -64,3 +64,43 @@ async def agent_delete_reminder(
         search_query=search_query,
         user_phone=user_phone,
     )
+
+
+@router.put("/agent/reminders/search")
+async def agent_update_reminder(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    search_query: str = Query(..., description="Text to find the reminder"),
+    user_phone: str = Query(..., description="User phone"),
+    message: str | None = Query(None, description="New message"),
+    trigger_date: str | None = Query(None, description="New date YYYY-MM-DD"),
+    trigger_time: str | None = Query(None, description="New time HH:MM"),
+    recurrence: str | None = Query(None, description="New recurrence: none, daily, weekly, monthly"),
+) -> dict:
+    """Update a reminder by search text (agent-facing)."""
+    return await reminders_service.agent_update_reminder(
+        tenant_id=tenant_id,
+        search_query=search_query,
+        user_phone=user_phone,
+        message=message,
+        trigger_date=trigger_date,
+        trigger_time=trigger_time,
+        recurrence=recurrence,
+    )
+
+
+@router.post("/agent/reminders/complete")
+async def agent_complete_reminder(
+    tenant_id: UUID,
+    current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    _: Annotated[None, Depends(validate_tenant_access)],
+    search_query: str = Query(..., description="Text to find the reminder"),
+    user_phone: str = Query(..., description="User phone"),
+) -> dict:
+    """Mark a reminder as completed (agent-facing)."""
+    return await reminders_service.agent_complete_reminder(
+        tenant_id=tenant_id,
+        search_query=search_query,
+        user_phone=user_phone,
+    )

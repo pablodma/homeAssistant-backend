@@ -89,40 +89,47 @@ async def get_events(
     search_query: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    created_by: UUID | None = None,
 ) -> tuple[list[asyncpg.Record], int]:
     """Get events with filters and pagination."""
-    conditions = ["tenant_id = $1"]
+    conditions = ["e.tenant_id = $1"]
     params: list = [tenant_id]
     param_idx = 2
 
     if start_date:
-        conditions.append(f"start_datetime >= ${param_idx}")
+        conditions.append(f"e.start_datetime >= ${param_idx}")
         params.append(datetime.combine(start_date, time.min))
         param_idx += 1
 
     if end_date:
-        conditions.append(f"start_datetime <= ${param_idx}")
+        conditions.append(f"e.start_datetime <= ${param_idx}")
         params.append(datetime.combine(end_date, time.max))
         param_idx += 1
 
     if search_query:
-        conditions.append(f"(LOWER(title) LIKE LOWER(${param_idx}) OR LOWER(description) LIKE LOWER(${param_idx}))")
+        conditions.append(f"(LOWER(e.title) LIKE LOWER(${param_idx}) OR LOWER(e.description) LIKE LOWER(${param_idx}))")
         params.append(f"%{search_query}%")
+        param_idx += 1
+
+    if created_by:
+        conditions.append(f"e.created_by = ${param_idx}")
+        params.append(created_by)
         param_idx += 1
 
     where_clause = " AND ".join(conditions)
 
     count_query = f"""
         SELECT COUNT(*) as total
-        FROM events
+        FROM events e
         WHERE {where_clause}
     """
 
     data_query = f"""
-        SELECT *
-        FROM events
+        SELECT e.*, u.display_name AS creator_name
+        FROM events e
+        LEFT JOIN users u ON e.created_by = u.id
         WHERE {where_clause}
-        ORDER BY start_datetime ASC
+        ORDER BY e.start_datetime ASC
         LIMIT ${param_idx} OFFSET ${param_idx + 1}
     """
     params.extend([limit, offset])
@@ -138,12 +145,13 @@ async def get_events(
 async def get_events_by_date(tenant_id: UUID, event_date: date) -> list[asyncpg.Record]:
     """Get all events for a specific date."""
     query = """
-        SELECT *
-        FROM events
-        WHERE tenant_id = $1
-          AND start_datetime >= $2
-          AND start_datetime < $3
-        ORDER BY start_datetime ASC
+        SELECT e.*, u.display_name AS creator_name
+        FROM events e
+        LEFT JOIN users u ON e.created_by = u.id
+        WHERE e.tenant_id = $1
+          AND e.start_datetime >= $2
+          AND e.start_datetime < $3
+        ORDER BY e.start_datetime ASC
     """
     start = datetime.combine(event_date, time.min)
     end = datetime.combine(event_date + timedelta(days=1), time.min)
@@ -155,12 +163,13 @@ async def get_events_in_range(
 ) -> list[asyncpg.Record]:
     """Get events within a datetime range."""
     query = """
-        SELECT *
-        FROM events
-        WHERE tenant_id = $1
-          AND start_datetime >= $2
-          AND start_datetime <= $3
-        ORDER BY start_datetime ASC
+        SELECT e.*, u.display_name AS creator_name
+        FROM events e
+        LEFT JOIN users u ON e.created_by = u.id
+        WHERE e.tenant_id = $1
+          AND e.start_datetime >= $2
+          AND e.start_datetime <= $3
+        ORDER BY e.start_datetime ASC
     """
     return await fetch_all(query, tenant_id, start, end)
 
@@ -196,14 +205,15 @@ async def search_events(
 ) -> list[asyncpg.Record]:
     """Search events by title or description."""
     query = """
-        SELECT *
-        FROM events
-        WHERE tenant_id = $1
+        SELECT e.*, u.display_name AS creator_name
+        FROM events e
+        LEFT JOIN users u ON e.created_by = u.id
+        WHERE e.tenant_id = $1
           AND (
-            LOWER(title) LIKE LOWER($2)
-            OR LOWER(description) LIKE LOWER($2)
+            LOWER(e.title) LIKE LOWER($2)
+            OR LOWER(e.description) LIKE LOWER($2)
           )
-        ORDER BY start_datetime DESC
+        ORDER BY e.start_datetime DESC
         LIMIT $3
     """
     return await fetch_all(query, tenant_id, f"%{search_query}%", limit)
@@ -212,11 +222,12 @@ async def search_events(
 async def get_next_event(tenant_id: UUID) -> asyncpg.Record | None:
     """Get the next upcoming event."""
     query = """
-        SELECT *
-        FROM events
-        WHERE tenant_id = $1
-          AND start_datetime >= NOW()
-        ORDER BY start_datetime ASC
+        SELECT e.*, u.display_name AS creator_name
+        FROM events e
+        LEFT JOIN users u ON e.created_by = u.id
+        WHERE e.tenant_id = $1
+          AND e.start_datetime >= NOW()
+        ORDER BY e.start_datetime ASC
         LIMIT 1
     """
     return await fetch_one(query, tenant_id)
@@ -303,6 +314,17 @@ async def delete_event(tenant_id: UUID, event_id: UUID) -> bool:
             event_id,
         )
         return result == "DELETE 1"
+
+
+async def get_recurring_events(tenant_id: UUID) -> list[asyncpg.Record]:
+    """Get all events with a recurrence rule for a tenant."""
+    query = """
+        SELECT e.*, u.display_name AS creator_name
+        FROM events e
+        LEFT JOIN users u ON e.created_by = u.id
+        WHERE e.tenant_id = $1 AND e.recurrence_rule IS NOT NULL
+    """
+    return await fetch_all(query, tenant_id)
 
 
 async def get_events_pending_sync(tenant_id: UUID) -> list[asyncpg.Record]:

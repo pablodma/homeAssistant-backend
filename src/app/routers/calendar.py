@@ -195,15 +195,17 @@ async def agent_list_events(
     search_query: str | None = Query(None, alias="search", description="Search term"),
     include_google: bool = Query(True, description="Include Google events"),
     user_phone: str | None = Query(None, description="User phone for Google lookup"),
+    only_mine: bool = Query(False, description="Solo eventos creados por mí"),
 ) -> EventListResponse:
     """List events for agent (n8n)."""
 
     request = AgentListEventsRequest(
-        date=date_filter,
+        event_date=date_filter,
         start_date=start_date,
         end_date=end_date,
         search_query=search_query,
         include_google=include_google,
+        only_mine=only_mine,
     )
 
     return await calendar_service.agent_list_events(

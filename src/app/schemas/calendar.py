@@ -93,6 +93,8 @@ class EventResponse(BaseSchema):
     created_at: datetime
     updated_at: datetime
     created_by: UUID | None
+    creator_name: str | None = None
+    is_recurring: bool = False
     google_event_id: str | None = None
     google_calendar_id: str | None = None
     sync_status: SyncStatus = SyncStatus.LOCAL
@@ -167,6 +169,7 @@ class AgentCreateEventRequest(BaseModel):
     location: Optional[str] = None
     description: Optional[str] = None
     user_phone: Optional[str] = Field(None, description="Phone to identify user for Google sync")
+    recurrence: Optional[str] = Field(None, description="Recurrence rule: none, daily, weekly, monthly, weekdays")
 
 
 class AgentUpdateEventRequest(BaseModel):
@@ -197,6 +200,7 @@ class AgentListEventsRequest(BaseModel):
     end_date: Optional[date_type] = None
     search_query: Optional[str] = None
     include_google: bool = Field(default=True, description="Include Google Calendar events")
+    only_mine: bool = False
 
 
 class AgentCheckAvailabilityRequest(BaseModel):
@@ -285,8 +289,10 @@ class EventWithDuplicateCheck(BaseModel):
     event: EventResponse | None = None
     duplicate_warning: DuplicateCheckResponse | None = None
     created: bool
+    conflicts: list["EventResponse"] | None = None
 
 
 # Rebuild models for forward references
 EventListResponse.model_rebuild()
 AgentSearchOperationResponse.model_rebuild()
+EventWithDuplicateCheck.model_rebuild()

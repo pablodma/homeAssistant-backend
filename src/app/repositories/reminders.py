@@ -73,6 +73,69 @@ async def delete_reminder_by_search(
     return await fetch_one(query, tenant_id, user_id, f"%{search_query}%")
 
 
+async def update_reminder_by_search(
+    tenant_id: UUID,
+    user_id: UUID,
+    search_query: str,
+    message: str | None = None,
+    trigger_at: datetime | None = None,
+    recurrence_rule: str | None = None,
+) -> asyncpg.Record | None:
+    """Find a pending reminder by search text and update it."""
+    find_query = """
+        SELECT id FROM reminders
+        WHERE tenant_id = $1 AND user_id = $2
+          AND message ILIKE $3 AND status = 'pending'
+        LIMIT 1
+    """
+    row = await fetch_one(find_query, tenant_id, user_id, f"%{search_query}%")
+    if not row:
+        return None
+
+    updates = ["updated_at = NOW()"]
+    params: list[Any] = [tenant_id, row["id"]]
+    param_idx = 3
+
+    if message is not None:
+        updates.append(f"message = ${param_idx}")
+        params.append(message)
+        param_idx += 1
+    if trigger_at is not None:
+        updates.append(f"trigger_at = ${param_idx}")
+        params.append(trigger_at)
+        param_idx += 1
+    if recurrence_rule is not None:
+        rec_val = None if recurrence_rule == "none" else recurrence_rule
+        updates.append(f"recurrence_rule = ${param_idx}")
+        params.append(rec_val)
+        param_idx += 1
+
+    if len(updates) == 1:  # only updated_at
+        return row
+
+    update_query = f"""
+        UPDATE reminders SET {', '.join(updates)}
+        WHERE tenant_id = $1 AND id = $2
+        RETURNING id, message, trigger_at, recurrence_rule
+    """
+    return await fetch_one(update_query, *params)
+
+
+async def complete_reminder_by_search(
+    tenant_id: UUID,
+    user_id: UUID,
+    search_query: str,
+) -> asyncpg.Record | None:
+    """Mark a pending reminder as completed by search text."""
+    query = """
+        UPDATE reminders SET status = 'completed'
+        WHERE tenant_id = $1 AND user_id = $2
+          AND message ILIKE $3 AND status = 'pending'
+        RETURNING id, message
+    """
+    return await fetch_one(query, tenant_id, user_id, f"%{search_query}%")
+
+
 async def get_user_by_phone(phone: str) -> asyncpg.Record | None:
     """Get user by phone number with Argentina mobile normalization."""
     normalized = phone.strip()
